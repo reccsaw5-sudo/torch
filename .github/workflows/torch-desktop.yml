@@ -1,0 +1,87 @@
+# Torch 桌面客户端在线打包(手动触发)。
+#
+# 产物:mac(Apple 芯片 + Intel)、Windows(64 位 + 32 位)、Linux 安装包。
+# 未签名(按既定方案),用户首次打开需在系统里放行。
+#
+# 运行内核(选项 1):客户端首次启动时,从"上游公共仓库"下载并安装 Hermes
+# 运行时。本工作流把内核固定到 runtime_ref 解析出的真实上游 commit,所以你的
+# 私有 fork 不需要公开。runtime_ref 默认 main,如首启不兼容可改成某个上游 tag。
+name: torch-desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_ref:
+        description: "上游运行时分支或 tag(客户端首启下载的 Hermes 内核版本)"
+        default: "main"
+        required: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: mac-arm64
+            os: macos-14
+            args: "--mac dmg zip --arm64"
+          - name: mac-x64
+            os: macos-13
+            args: "--mac dmg zip --x64"
+          - name: win-x64
+            os: windows-latest
+            args: "--win nsis msi --x64"
+          - name: win-ia32
+            os: windows-latest
+            args: "--win nsis --ia32"
+          - name: linux-x64
+            os: ubuntu-latest
+            args: "--linux AppImage deb rpm"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Resolve upstream runtime commit
+        shell: bash
+        run: |
+          REF="${{ github.event.inputs.runtime_ref }}"
+          REF="${REF:-main}"
+          SHA=$(git ls-remote https://github.com/NousResearch/hermes-agent.git "$REF" | awk '{print $1}' | head -n1)
+          if [ -z "$SHA" ]; then echo "无法解析上游 ref: $REF"; exit 1; fi
+          echo "TORCH_RUNTIME_COMMIT=$SHA" >> "$GITHUB_ENV"
+          echo "TORCH_RUNTIME_BRANCH=$REF" >> "$GITHUB_ENV"
+          echo "运行内核固定到: $REF -> $SHA"
+
+      - name: Install deps (workspace root)
+        run: npm ci
+
+      - name: Build & package
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          # 未签名:关闭 mac 证书自动发现,notarize 无凭据会自动跳过。
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm run build
+          npm run builder -- ${{ matrix.args }} --publish never
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: torch-${{ matrix.name }}
+          if-no-files-found: warn
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.msi
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.rpm

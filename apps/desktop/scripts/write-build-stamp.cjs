@@ -45,6 +45,23 @@ function tryExec(cmd, opts) {
   }
 }
 
+// Explicit override: pin first-launch bootstrap to a specific upstream ref
+// regardless of which repo/commit this desktop shell was built from. Used by
+// the Torch desktop packaging workflow so a white-label build (built from a
+// private fork) still installs the public upstream Hermes runtime at a real,
+// fetchable commit. Highest precedence.
+function fromOverride() {
+  const commit = String(process.env.TORCH_RUNTIME_COMMIT || "").trim()
+  if (!commit) return null
+  const branch = String(process.env.TORCH_RUNTIME_BRANCH || "").trim() || null
+  return {
+    commit: commit,
+    branch: branch,
+    dirty: false,
+    source: "override"
+  }
+}
+
 function fromCI() {
   const sha = process.env.GITHUB_SHA
   if (!sha) return null
@@ -78,7 +95,7 @@ function fromLocalGit() {
 }
 
 function main() {
-  const stamp = fromCI() || fromLocalGit()
+  const stamp = fromOverride() || fromCI() || fromLocalGit()
   if (!stamp || !stamp.commit) {
     console.error(
       "[write-build-stamp] ERROR: could not determine git commit.\n" +
