@@ -153,6 +153,21 @@ export interface OrderRow {
   paid_at: number | null
 }
 
+export interface BuildRun {
+  id: number
+  status: string
+  conclusion: string | null
+  event: string
+  created_at: string
+  html_url: string
+}
+
+export interface BuildFile {
+  platform: string
+  name: string
+  url: string
+}
+
 export const api = {
   // Validate the admin token by hitting a gated endpoint.
   verifyToken: () => req<{ data: UserRow[] }>('GET', '/admin/users'),
@@ -188,5 +203,17 @@ export const api = {
   upsertPackage: (p: PackageUpsert) => req<{ ok: boolean }>('POST', '/admin/packages', p),
   deletePackage: (id: number) => req<{ ok: boolean }>('DELETE', `/admin/packages/${id}`),
 
-  listOrders: () => req<{ data: OrderRow[] }>('GET', '/admin/orders')
+  listOrders: () => req<{ data: OrderRow[] }>('GET', '/admin/orders'),
+
+  getBuildConfig: () => req<Record<string, string>>('GET', '/admin/build/config'),
+  setBuildConfig: (patch: Record<string, string>) =>
+    req<Record<string, string>>('POST', '/admin/build/config', patch),
+  triggerBuild: (platforms: string[]) =>
+    req<{ ok: boolean; platforms: string[] }>('POST', '/admin/build/trigger', { platforms }),
+  getBuildStatus: () => req<{ configured: boolean; runs: BuildRun[] }>('GET', '/admin/build/status'),
+  getBuildDownloads: () =>
+    req<{ configured: boolean; files: BuildFile[]; note?: string; generated_at?: number }>(
+      'GET',
+      '/admin/build/downloads'
+    )
 }

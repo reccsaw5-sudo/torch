@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, clearToken, getToken, setToken } from '@/lib/api'
 import Brand from '@/pages/Brand'
+import ClientBuild from '@/pages/ClientBuild'
 import Models from '@/pages/Models'
 import Payments from '@/pages/Payments'
 import Skills from '@/pages/Skills'
@@ -89,7 +90,7 @@ export default function App() {
       <header className="mb-6 flex items-center justify-between border-b pb-4">
         <div>
           <h1 className="text-xl font-bold">Torch 管理后台</h1>
-          <p className="text-sm text-muted-foreground">模型 · 用户积分 · 支付充值 · 首页卡片 · 技能市场 · 品牌配置</p>
+          <p className="text-sm text-muted-foreground">模型 · 用户积分 · 支付充值 · 首页卡片 · 技能市场 · 品牌配置 · 客户端构建</p>
         </div>
         <Button variant="outline" size="sm" onClick={logout}>
           <LogOut className="h-4 w-4" /> 退出
@@ -105,6 +106,7 @@ export default function App() {
           <TabsTrigger value="suggestions">首页卡片</TabsTrigger>
           <TabsTrigger value="skills">技能市场</TabsTrigger>
           <TabsTrigger value="brand">品牌</TabsTrigger>
+          <TabsTrigger value="build">客户端构建</TabsTrigger>
         </TabsList>
         <TabsContent value="models">
           <Models />
@@ -126,6 +128,9 @@ export default function App() {
         </TabsContent>
         <TabsContent value="brand">
           <Brand />
+        </TabsContent>
+        <TabsContent value="build">
+          <ClientBuild />
         </TabsContent>
       </Tabs>
     </div>

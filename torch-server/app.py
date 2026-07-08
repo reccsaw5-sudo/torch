@@ -119,6 +119,26 @@ WECHAT_LOGIN_DEFAULTS: dict[str, str] = {
 _AUTH_KEYS = set(WECHAT_LOGIN_DEFAULTS)
 _AUTH_SECRET_KEYS = {"wechat_login_secret"}
 
+# Desktop client packaging — editable from admin. The admin "客户端构建" page
+# uses this to remote-trigger the GitHub Actions packaging workflow and to show
+# the download links published to Tencent COS (方式 B: COS keys live as GitHub
+# Secrets, the build machine uploads directly to COS, the server only triggers
+# builds + reads the published manifest).
+#   github_repo   owner/repo of the private packaging repo
+#   github_token  PAT with actions:write (masked); triggers workflow_dispatch
+#   github_workflow  workflow file name
+#   github_ref    branch/tag to run the workflow on
+#   cos_base_url  public COS base (or CDN domain) where manifest.json lives
+BUILD_DEFAULTS: dict[str, str] = {
+    "github_repo": "",
+    "github_token": "",
+    "github_workflow": "torch-desktop.yml",
+    "github_ref": "main",
+    "cos_base_url": "",
+}
+_BUILD_KEYS = set(BUILD_DEFAULTS)
+_BUILD_SECRET_KEYS = {"github_token"}
+
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 # WeChat Pay v3 caches downloaded platform certificates here.
 _WECHAT_CERT_DIR = os.path.join(_DATA_DIR, "wechat_certs")
@@ -240,6 +260,7 @@ _DDL = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id)",
     "CREATE TABLE IF NOT EXISTS auth_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS build_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     """
     CREATE TABLE IF NOT EXISTS wechat_login_states (
         state TEXT PRIMARY KEY,
@@ -310,6 +331,12 @@ def _init_db() -> None:
                 " ON CONFLICT (key) DO NOTHING",
                 (k, v),
             )
+        for k, v in BUILD_DEFAULTS.items():
+            conn.execute(
+                "INSERT INTO build_config(key, value) VALUES (%s,%s)"
+                " ON CONFLICT (key) DO NOTHING",
+                (k, v),
+            )
         if conn.execute("SELECT COUNT(*) AS n FROM recharge_packages").fetchone()["n"] == 0:
             for title, amount_fen, credits, order in _SEED_PACKAGES:
                 conn.execute(
@@ -374,6 +401,27 @@ def _auth_all(conn) -> dict:
 
 def _mask_auth(cfg: dict) -> dict:
     return {k: ("***" if k in _AUTH_SECRET_KEYS and v else v) for k, v in cfg.items()}
+
+
+def _build_all(conn) -> dict:
+    rows = conn.execute("SELECT key, value FROM build_config").fetchall()
+    data = {r["key"]: r["value"] for r in rows}
+    for k, v in BUILD_DEFAULTS.items():
+        data.setdefault(k, v)
+    return data
+
+
+def _mask_build(cfg: dict) -> dict:
+    return {k: ("***" if k in _BUILD_SECRET_KEYS and v else v) for k, v in cfg.items()}
+
+
+def _github_headers(token: str) -> dict:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "torch-server",
+    }
 
 
 def _wechat_login_enabled(cfg: dict) -> bool:
@@ -1607,6 +1655,134 @@ def admin_list_orders(x_admin_token: Optional[str] = Header(default=None)) -> di
             " ORDER BY o.id DESC LIMIT 100"
         ).fetchall()
     return {"data": [dict(r) for r in rows]}
+
+
+# --------------------------------------------------------------------------
+# Desktop client build (远程触发 GitHub Actions 打包 + 读取 COS 下载清单)
+# --------------------------------------------------------------------------
+class BuildTrigger(BaseModel):
+    platforms: list[str] = []
+
+
+@app.get("/admin/build/config")
+def admin_get_build(x_admin_token: Optional[str] = Header(default=None)) -> dict:
+    _require_admin(x_admin_token)
+    with _db() as conn:
+        return _mask_build(_build_all(conn))
+
+
+@app.post("/admin/build/config")
+def admin_set_build(
+    payload: dict, x_admin_token: Optional[str] = Header(default=None)
+) -> dict:
+    _require_admin(x_admin_token)
+    unknown = set(payload) - _BUILD_KEYS
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown keys: {sorted(unknown)}")
+    with _db() as conn:
+        for k, v in payload.items():
+            v = str(v)
+            if k in _BUILD_SECRET_KEYS and v in {"", "***"}:
+                continue
+            conn.execute(
+                "INSERT INTO build_config(key, value) VALUES (%s,%s)"
+                " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (k, v),
+            )
+        return _mask_build(_build_all(conn))
+
+
+@app.post("/admin/build/trigger")
+def admin_build_trigger(
+    payload: BuildTrigger, x_admin_token: Optional[str] = Header(default=None)
+) -> dict:
+    _require_admin(x_admin_token)
+    with _db() as conn:
+        cfg = _build_all(conn)
+    repo = (cfg.get("github_repo") or "").strip()
+    token = (cfg.get("github_token") or "").strip()
+    workflow = (cfg.get("github_workflow") or "").strip() or "torch-desktop.yml"
+    ref = (cfg.get("github_ref") or "").strip() or "main"
+    if not repo or not token:
+        raise HTTPException(status_code=400, detail="请先填写并保存 GitHub 仓库和 Token")
+    allowed = {"mac-arm64", "mac-x64", "win-x64", "win-ia32", "linux-x64"}
+    picked = [p for p in payload.platforms if p in allowed]
+    inputs = {"runtime_ref": "main", "platforms": ",".join(picked)}
+    url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches"
+    try:
+        with _client("https://api.github.com") as c:
+            r = c.post(url, headers=_github_headers(token), json={"ref": ref, "inputs": inputs})
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"无法连接 GitHub: {e}")
+    if r.status_code not in (201, 204):
+        raise HTTPException(
+            status_code=502, detail=f"GitHub 触发失败({r.status_code}):{r.text[:300]}"
+        )
+    return {"ok": True, "platforms": picked or ["all"]}
+
+
+@app.get("/admin/build/status")
+def admin_build_status(x_admin_token: Optional[str] = Header(default=None)) -> dict:
+    _require_admin(x_admin_token)
+    with _db() as conn:
+        cfg = _build_all(conn)
+    repo = (cfg.get("github_repo") or "").strip()
+    token = (cfg.get("github_token") or "").strip()
+    workflow = (cfg.get("github_workflow") or "").strip() or "torch-desktop.yml"
+    if not repo or not token:
+        return {"configured": False, "runs": []}
+    url = (
+        f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/runs"
+        "?per_page=8"
+    )
+    try:
+        with _client("https://api.github.com") as c:
+            r = c.get(url, headers=_github_headers(token))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"无法连接 GitHub: {e}")
+    if r.status_code != 200:
+        raise HTTPException(
+            status_code=502, detail=f"GitHub 查询失败({r.status_code}):{r.text[:300]}"
+        )
+    runs = [
+        {
+            "id": w.get("id"),
+            "status": w.get("status"),
+            "conclusion": w.get("conclusion"),
+            "event": w.get("event"),
+            "created_at": w.get("created_at"),
+            "html_url": w.get("html_url"),
+        }
+        for w in r.json().get("workflow_runs", [])
+    ]
+    return {"configured": True, "runs": runs}
+
+
+@app.get("/admin/build/downloads")
+def admin_build_downloads(x_admin_token: Optional[str] = Header(default=None)) -> dict:
+    _require_admin(x_admin_token)
+    with _db() as conn:
+        cfg = _build_all(conn)
+    base = (cfg.get("cos_base_url") or "").strip().rstrip("/")
+    if not base:
+        return {"configured": False, "files": []}
+    url = f"{base}/clients/latest/manifest.json"
+    try:
+        with _client(base) as c:
+            r = c.get(url)
+    except Exception as e:
+        return {"configured": True, "files": [], "note": f"读取清单失败:{e}"}
+    if r.status_code != 200:
+        return {"configured": True, "files": [], "note": f"暂无安装包清单({r.status_code})"}
+    try:
+        data = r.json()
+    except Exception:
+        return {"configured": True, "files": [], "note": "清单格式无效"}
+    return {
+        "configured": True,
+        "files": data.get("files", []),
+        "generated_at": data.get("generated_at"),
+    }
 
 
 if __name__ == "__main__":

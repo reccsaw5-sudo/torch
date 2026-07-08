@@ -15,9 +15,15 @@ on:
         description: "上游运行时分支或 tag(客户端首启下载的 Hermes 内核版本)"
         default: "main"
         required: true
+      platforms:
+        description: "要构建的平台(逗号分隔,如 mac-arm64,win-x64;留空=全部)"
+        default: ""
+        required: false
 
 jobs:
   build:
+    # platforms 为空则全建;否则只建名字被勾选的平台。
+    if: ${{ github.event.inputs.platforms == '' || contains(github.event.inputs.platforms, matrix.name) }}
     strategy:
       fail-fast: false
       matrix:
@@ -85,3 +91,42 @@ jobs:
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
             apps/desktop/release/*.rpm
+
+  # 所有平台构建完成后,把安装包直传腾讯 COS 并写 manifest.json。
+  # COS 密钥用仓库 Secrets(方式 B):COS_SECRET_ID / COS_SECRET_KEY /
+  # COS_BUCKET / COS_REGION;可选变量 vars.COS_BASE_URL(自定义域名/CDN)。
+  # 没配 COS 时自动跳过(仍可从本次运行 Artifacts 手动下载)。
+  publish-cos:
+    needs: build
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for publish script)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Upload to Tencent COS + write manifest
+        shell: bash
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+          COS_BUCKET: ${{ secrets.COS_BUCKET }}
+          COS_REGION: ${{ secrets.COS_REGION }}
+          COS_BASE_URL: ${{ vars.COS_BASE_URL }}
+        run: |
+          if [ -z "$COS_SECRET_ID" ] || [ -z "$COS_BUCKET" ]; then
+            echo "COS 未配置(缺少 Secrets),跳过上传。安装包仍可从本次运行的 Artifacts 下载。"
+            exit 0
+          fi
+          python -m pip install --quiet coscmd
+          coscmd config -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" -b "$COS_BUCKET" -r "$COS_REGION"
+          python .github/scripts/torch_publish_cos.py
