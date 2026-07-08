@@ -1,0 +1,67 @@
+# Torch 生产栈(拉镜像版):服务器只从镜像仓库拉取,不在本机构建。
+# 镜像先用 deploy/build-and-push.sh 在本地/CI 构建并推送。
+#
+# 服务器上只需要这个 compose 文件 + deploy/.env.prod(edge 镜像已内置 Caddyfile
+# 和 admin-ui,无需源码):
+#
+#   docker login registry.cn-shanghai.aliyuncs.com      # 私有仓库需先登录
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.registry.yml up -d
+#
+name: torch
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-torch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-torch}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-torch} -d ${POSTGRES_DB:-torch}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  torch-server:
+    image: ${TORCH_IMAGE_REPO:-registry.cn-shanghai.aliyuncs.com/gongyong1/hermes}:${TORCH_SERVER_TAG:-torch-server}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TORCH_DATABASE_URL: postgresql://${POSTGRES_USER:-torch}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-torch}
+      TORCH_ADMIN_TOKEN: ${TORCH_ADMIN_TOKEN:?set TORCH_ADMIN_TOKEN in .env.prod}
+      TORCH_PUBLIC_BASE: https://${TORCH_DOMAIN:?set TORCH_DOMAIN in .env.prod}
+      TORCH_SIGNUP_CREDITS: ${TORCH_SIGNUP_CREDITS:-1000}
+    volumes:
+      - torchdata:/app/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  caddy:
+    image: ${TORCH_IMAGE_REPO:-registry.cn-shanghai.aliyuncs.com/gongyong1/hermes}:${TORCH_EDGE_TAG:-edge}
+    restart: unless-stopped
+    depends_on:
+      - torch-server
+    environment:
+      TORCH_DOMAIN: ${TORCH_DOMAIN:?set TORCH_DOMAIN in .env.prod}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddydata:/data
+      - caddyconfig:/config
+
+volumes:
+  pgdata:
+  torchdata:
+  caddydata:
+  caddyconfig:

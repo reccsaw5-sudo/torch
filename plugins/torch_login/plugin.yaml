@@ -1,0 +1,5 @@
+name: torch_login
+version: 0.1.0
+description: "Branded client login via Casdoor (OAuth2 authorization-code + PKCE, loopback redirect). Adds `hermes torch login/status/logout`."
+author: BestLins
+kind: standalone

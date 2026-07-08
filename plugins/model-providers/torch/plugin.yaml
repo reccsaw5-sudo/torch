@@ -1,0 +1,5 @@
+name: torch-provider
+kind: model-provider
+version: 0.1.0
+description: Torch — branded metered inference
+author: BestLins

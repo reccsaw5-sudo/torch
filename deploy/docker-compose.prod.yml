@@ -1,0 +1,68 @@
+# Torch production stack: PostgreSQL + torch-server + Caddy edge (HTTPS + admin
+# SPA + reverse proxy). Bring up from the repo root:
+#
+#   cp deploy/.env.prod.example deploy/.env.prod   # then edit
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d --build
+#
+name: torch
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-torch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-torch}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-torch} -d ${POSTGRES_DB:-torch}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  torch-server:
+    build:
+      context: ../torch-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TORCH_DATABASE_URL: postgresql://${POSTGRES_USER:-torch}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-torch}
+      TORCH_ADMIN_TOKEN: ${TORCH_ADMIN_TOKEN:?set TORCH_ADMIN_TOKEN in .env.prod}
+      TORCH_PUBLIC_BASE: https://${TORCH_DOMAIN:?set TORCH_DOMAIN in .env.prod}
+      TORCH_SIGNUP_CREDITS: ${TORCH_SIGNUP_CREDITS:-1000}
+    volumes:
+      - torchdata:/app/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: deploy/Caddy.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - torch-server
+    environment:
+      TORCH_DOMAIN: ${TORCH_DOMAIN:?set TORCH_DOMAIN in .env.prod}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddydata:/data
+      - caddyconfig:/config
+
+volumes:
+  pgdata:
+  torchdata:
+  caddydata:
+  caddyconfig:

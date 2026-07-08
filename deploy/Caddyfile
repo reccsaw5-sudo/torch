@@ -1,0 +1,27 @@
+# Single public entrypoint for the Torch stack. TORCH_DOMAIN is injected by
+# docker-compose from .env.prod. Caddy auto-provisions an HTTPS certificate for
+# it (needs public ports 80 + 443 and a DNS A record pointing here).
+{$TORCH_DOMAIN} {
+	encode gzip zstd
+
+	# Admin console (static SPA) at /admin — built with base=/admin/.
+	handle_path /admin/* {
+		root * /srv/admin
+		try_files {path} /index.html
+		file_server
+	}
+	redir /admin /admin/ permanent
+
+	# Admin API: torch-admin-ui calls /api/* and (like the dev proxy) the /api
+	# prefix is stripped before hitting torch-server (/admin/*, etc.).
+	handle_path /api/* {
+		reverse_proxy torch-server:8080
+	}
+
+	# Everything else is the client-facing torch-server surface:
+	#   /auth/*  /v1/*  /billing/*  /account/*  /brand  /skills  /suggestions
+	#   /models  /health  and the WeChat callback /auth/wechat/*.
+	handle {
+		reverse_proxy torch-server:8080
+	}
+}
