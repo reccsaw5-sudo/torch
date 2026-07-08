@@ -4,7 +4,8 @@
   "private": true,
   "version": "0.17.0",
   "description": "Torch desktop client.",
-  "author": "Torch",
+  "author": "Torch <support@torchai.ai>",
+  "homepage": "https://claw.torchai.ai",
   "type": "module",
   "main": "electron/main.cjs",
   "engines": {
