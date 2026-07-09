@@ -42,6 +42,25 @@ const { spawn } = require('node:child_process')
 
 const IS_WINDOWS = process.platform === 'win32'
 
+// 国内镜像加速:首次安装时 install.ps1/sh 用 uv/pip 装 Python 依赖、npm 装 node
+// 依赖,默认从 pypi.org / registry.npmjs.org 拉,在国内极慢甚至超时。这里把这些
+// 工具认的标准环境变量指向国内官方镜像(清华 PyPI + npmmirror,都是全量镜像,
+// 文件与 sha256 和上游一致,uv sync --locked 的哈希校验照样通过)。
+// 只在用户没自己设过时才注入,方便海外/CI 覆盖。
+function chinaMirrorEnv() {
+  const defaults = {
+    UV_INDEX_URL: 'https://pypi.tuna.tsinghua.edu.cn/simple',
+    PIP_INDEX_URL: 'https://pypi.tuna.tsinghua.edu.cn/simple',
+    PIP_TRUSTED_HOST: 'pypi.tuna.tsinghua.edu.cn',
+    npm_config_registry: 'https://registry.npmmirror.com'
+  }
+  const out = {}
+  for (const [k, v] of Object.entries(defaults)) {
+    if (!process.env[k]) out[k] = v
+  }
+  return out
+}
+
 function hiddenWindowsChildOptions(options = {}) {
   if (!IS_WINDOWS || Object.prototype.hasOwnProperty.call(options, 'windowsHide')) {
     return options
@@ -306,6 +325,7 @@ function spawnPowerShell(scriptPath, args, { emit, stageName, abortSignal, herme
         stdio: ['ignore', 'pipe', 'pipe'],
         env: {
           ...process.env,
+          ...chinaMirrorEnv(),
           // Pass HERMES_HOME through so install.ps1 respects the caller's
           // choice rather than re-computing the default.
           HERMES_HOME: hermesHome || process.env.HERMES_HOME || ''
@@ -382,6 +402,7 @@ function spawnBash(scriptPath, args, { emit, stageName, abortSignal, hermesHome 
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
+        ...chinaMirrorEnv(),
         HERMES_HOME: hermesHome || process.env.HERMES_HOME || ''
       }
     })
