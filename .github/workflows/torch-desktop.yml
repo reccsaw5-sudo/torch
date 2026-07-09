@@ -127,11 +127,13 @@ jobs:
             exit 0
           fi
           python -m pip install --quiet coscmd
-          ACCEL=""
+          # -m 10:多线程分片上传,提高跨境上传吞吐与容错。
+          # 全球加速:coscmd 通过 endpoint 走加速域名 cos.accelerate.myqcloud.com
+          # (与 -r region 互斥)。GitHub runner 在境外,开加速后传国内桶才不会超时。
           if [ "$COS_USE_ACCELERATE" = "true" ] || [ "$COS_USE_ACCELERATE" = "1" ]; then
-            ACCEL="-u"
-            echo "已启用 COS 全球加速上传(-u)。"
+            echo "已启用 COS 全球加速上传(endpoint=cos.accelerate.myqcloud.com)。"
+            coscmd config -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" -b "$COS_BUCKET" -e cos.accelerate.myqcloud.com -m 10
+          else
+            coscmd config -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" -b "$COS_BUCKET" -r "$COS_REGION" -m 10
           fi
-          # -m 10:多线程分片上传,提高跨境上传的吞吐与容错。
-          coscmd config -a "$COS_SECRET_ID" -s "$COS_SECRET_KEY" -b "$COS_BUCKET" -r "$COS_REGION" -m 10 $ACCEL
           python .github/scripts/torch_publish_cos.py
