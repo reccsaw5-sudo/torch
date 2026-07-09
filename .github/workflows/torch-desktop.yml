@@ -21,28 +21,24 @@ on:
         required: false
 
 jobs:
+  # 根据 platforms 输入动态生成矩阵(job 级 if 里不能用 matrix,所以在这里筛)。
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        shell: bash
+        env:
+          PLATFORMS: ${{ github.event.inputs.platforms }}
+        run: python3 .github/scripts/torch_pick_matrix.py
+
   build:
-    # platforms 为空则全建;否则只建名字被勾选的平台。
-    if: ${{ github.event.inputs.platforms == '' || contains(github.event.inputs.platforms, matrix.name) }}
+    needs: setup
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: mac-arm64
-            os: macos-14
-            args: "--mac dmg zip --arm64"
-          - name: mac-x64
-            os: macos-13
-            args: "--mac dmg zip --x64"
-          - name: win-x64
-            os: windows-latest
-            args: "--win nsis msi --x64"
-          - name: win-ia32
-            os: windows-latest
-            args: "--win nsis --ia32"
-          - name: linux-x64
-            os: ubuntu-latest
-            args: "--linux AppImage deb rpm"
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
