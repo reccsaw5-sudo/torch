@@ -55,21 +55,33 @@ const RUNTIME_UPSTREAM_SSH = 'git@github.com:NousResearch/hermes-agent.git'
 // 可覆盖)。清华/npmmirror 是全量镜像,sha256 与上游一致,uv sync --locked 照样过。
 function chinaMirrorEnv() {
   const out = {}
+  // GitHub 大文件(uv/python 等)统一走的加速前缀;可用 TORCH_GH_PROXY 覆盖。
+  const ghProxy = (process.env.TORCH_GH_PROXY || 'https://gh-proxy.com').replace(/\/+$/, '')
   const simple = {
     UV_INDEX_URL: 'https://pypi.tuna.tsinghua.edu.cn/simple',
     PIP_INDEX_URL: 'https://pypi.tuna.tsinghua.edu.cn/simple',
     PIP_TRUSTED_HOST: 'pypi.tuna.tsinghua.edu.cn',
-    npm_config_registry: 'https://registry.npmmirror.com'
+    npm_config_registry: 'https://registry.npmmirror.com',
+    // Electron 二进制 + electron-builder 工具(nsis/winCodeSign 等)走 npmmirror。
+    ELECTRON_MIRROR: 'https://registry.npmmirror.com/-/binary/electron/',
+    ELECTRON_BUILDER_BINARIES_MIRROR: 'https://registry.npmmirror.com/-/binary/electron-builder-binaries/',
+    // Playwright 浏览器内核走 npmmirror。
+    PLAYWRIGHT_DOWNLOAD_HOST: 'https://cdn.npmmirror.com/binaries/playwright'
   }
   for (const [k, v] of Object.entries(simple)) {
     if (!process.env[k]) out[k] = v
   }
-  // Python 解释器:uv 默认从 github 的 python-build-standalone 下。指向国内可达镜像;
-  // 可用 TORCH_UV_PYTHON_MIRROR 覆盖(例如你自己 COS 上的镜像)。
+  // uv 二进制:astral 独立安装器(irm astral.sh/uv/install.ps1)默认从 github releases
+  // 下 uv 本体,国内被重置/慢。改走 GitHub 加速前缀。
+  if (!process.env.UV_INSTALLER_GITHUB_BASE_URL) {
+    out.UV_INSTALLER_GITHUB_BASE_URL = `${ghProxy}/https://github.com`
+  }
+  // Python 解释器:uv 从 github 的 python-build-standalone 下。走加速;可用
+  // TORCH_UV_PYTHON_MIRROR 覆盖成你自己 COS 上的镜像。
   if (!process.env.UV_PYTHON_INSTALL_MIRROR) {
     out.UV_PYTHON_INSTALL_MIRROR =
       process.env.TORCH_UV_PYTHON_MIRROR ||
-      'https://gh-proxy.com/https://github.com/astral-sh/python-build-standalone/releases/download'
+      `${ghProxy}/https://github.com/astral-sh/python-build-standalone/releases/download`
   }
   // 运行内核 clone 换源:git 的 insteadOf 把上游 github 仓库地址改写成 Gitee 镜像,
   // install 脚本里 clone/fetch origin 会自动走 Gitee。用 GIT_CONFIG_* 注入,不改全局配置。
