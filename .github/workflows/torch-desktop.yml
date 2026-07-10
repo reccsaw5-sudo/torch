@@ -50,16 +50,18 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Resolve upstream runtime commit
+      - name: Resolve runtime commit (from Gitee mirror)
         shell: bash
         run: |
+          # 从 Gitee 镜像解析 commit,保证客户端固定的 commit 一定在 Gitee 里
+          # (客户端首启从 Gitee 下 install 脚本、clone 内核)。
           REF="${{ github.event.inputs.runtime_ref }}"
           REF="${REF:-main}"
-          SHA=$(git ls-remote https://github.com/NousResearch/hermes-agent.git "$REF" | awk '{print $1}' | head -n1)
-          if [ -z "$SHA" ]; then echo "无法解析上游 ref: $REF"; exit 1; fi
+          SHA=$(git ls-remote https://gitee.com/Gitsongsong/hermes-agent.git "$REF" | awk '{print $1}' | head -n1)
+          if [ -z "$SHA" ]; then echo "无法从 Gitee 镜像解析 ref: $REF(检查镜像是否已同步该分支)"; exit 1; fi
           echo "TORCH_RUNTIME_COMMIT=$SHA" >> "$GITHUB_ENV"
           echo "TORCH_RUNTIME_BRANCH=$REF" >> "$GITHUB_ENV"
-          echo "运行内核固定到: $REF -> $SHA"
+          echo "运行内核固定到(Gitee): $REF -> $SHA"
 
       - name: Install deps (workspace root)
         run: npm ci

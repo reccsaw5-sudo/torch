@@ -42,21 +42,43 @@ const { spawn } = require('node:child_process')
 
 const IS_WINDOWS = process.platform === 'win32'
 
-// 国内镜像加速:首次安装时 install.ps1/sh 用 uv/pip 装 Python 依赖、npm 装 node
-// 依赖,默认从 pypi.org / registry.npmjs.org 拉,在国内极慢甚至超时。这里把这些
-// 工具认的标准环境变量指向国内官方镜像(清华 PyPI + npmmirror,都是全量镜像,
-// 文件与 sha256 和上游一致,uv sync --locked 的哈希校验照样通过)。
-// 只在用户没自己设过时才注入,方便海外/CI 覆盖。
+// 运行内核的国内镜像(Gitee)。首启从 GitHub 下东西在国内会被重置/限速,这里
+// 统一指向 Gitee 镜像:①从 Gitee raw 下 install 脚本 ②git clone 内核换源到 Gitee。
+const RUNTIME_MIRROR_OWNER_REPO = 'Gitsongsong/hermes-agent'
+const RUNTIME_MIRROR_GIT = `https://gitee.com/${RUNTIME_MIRROR_OWNER_REPO}.git`
+const RUNTIME_UPSTREAM_HTTPS = 'https://github.com/NousResearch/hermes-agent.git'
+const RUNTIME_UPSTREAM_SSH = 'git@github.com:NousResearch/hermes-agent.git'
+
+// 国内镜像加速:首启时 install.ps1/sh 用 uv/pip 装 Python 依赖、npm 装 node 依赖、
+// uv 下 Python 解释器、git clone 运行内核,默认全走境外源,在国内慢/被重置。这里
+// 把各工具认的标准环境变量指向国内可达镜像。只在用户没自己设过时才注入(海外/CI
+// 可覆盖)。清华/npmmirror 是全量镜像,sha256 与上游一致,uv sync --locked 照样过。
 function chinaMirrorEnv() {
-  const defaults = {
+  const out = {}
+  const simple = {
     UV_INDEX_URL: 'https://pypi.tuna.tsinghua.edu.cn/simple',
     PIP_INDEX_URL: 'https://pypi.tuna.tsinghua.edu.cn/simple',
     PIP_TRUSTED_HOST: 'pypi.tuna.tsinghua.edu.cn',
     npm_config_registry: 'https://registry.npmmirror.com'
   }
-  const out = {}
-  for (const [k, v] of Object.entries(defaults)) {
+  for (const [k, v] of Object.entries(simple)) {
     if (!process.env[k]) out[k] = v
+  }
+  // Python 解释器:uv 默认从 github 的 python-build-standalone 下。指向国内可达镜像;
+  // 可用 TORCH_UV_PYTHON_MIRROR 覆盖(例如你自己 COS 上的镜像)。
+  if (!process.env.UV_PYTHON_INSTALL_MIRROR) {
+    out.UV_PYTHON_INSTALL_MIRROR =
+      process.env.TORCH_UV_PYTHON_MIRROR ||
+      'https://gh-proxy.com/https://github.com/astral-sh/python-build-standalone/releases/download'
+  }
+  // 运行内核 clone 换源:git 的 insteadOf 把上游 github 仓库地址改写成 Gitee 镜像,
+  // install 脚本里 clone/fetch origin 会自动走 Gitee。用 GIT_CONFIG_* 注入,不改全局配置。
+  if (!process.env.GIT_CONFIG_COUNT) {
+    out.GIT_CONFIG_COUNT = '2'
+    out.GIT_CONFIG_KEY_0 = `url.${RUNTIME_MIRROR_GIT}.insteadOf`
+    out.GIT_CONFIG_VALUE_0 = RUNTIME_UPSTREAM_HTTPS
+    out.GIT_CONFIG_KEY_1 = `url.${RUNTIME_MIRROR_GIT}.insteadOf`
+    out.GIT_CONFIG_VALUE_1 = RUNTIME_UPSTREAM_SSH
   }
   return out
 }
@@ -123,60 +145,41 @@ function cachedScriptPath(hermesHome, commit) {
   return path.join(bootstrapCacheDir(hermesHome), `install-${commit}.${process.platform === 'win32' ? 'ps1' : 'sh'}`)
 }
 
-function downloadInstallScript(commit, destPath) {
-  // Fetch from GitHub raw at the pinned commit. The raw URL with a SHA
-  // is immutable (unlike a branch ref), so we don't need integrity
-  // verification beyond "did the file we wrote pass a syntax probe."
-  const scriptName = installScriptName()
-  const url = `https://raw.githubusercontent.com/NousResearch/hermes-agent/${commit}/scripts/${scriptName}`
+// Download a URL to destPath, following redirects (Gitee raw 302-redirects to
+// raw.giteeusercontent.com with a signed URL, so multi-hop is required).
+function httpDownload(url, destPath, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(destPath), { recursive: true })
     const tmpPath = destPath + '.tmp'
-    const out = fs.createWriteStream(tmpPath)
     https
       .get(url, res => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          // GitHub raw shouldn't redirect for a SHA URL, but follow once
-          // defensively.
-          out.close()
-          fs.unlinkSync(tmpPath)
-          https
-            .get(res.headers.location, res2 => {
-              if (res2.statusCode !== 200) {
-                reject(
-                  new Error(
-                    `Failed to download ${scriptName}: HTTP ${res2.statusCode} from redirect ${res.headers.location}`
-                  )
-                )
-                return
-              }
-              const out2 = fs.createWriteStream(tmpPath)
-              res2.pipe(out2)
-              out2.on('finish', () => {
-                out2.close()
-                fs.renameSync(tmpPath, destPath)
-                resolve(destPath)
-              })
-              out2.on('error', reject)
-            })
-            .on('error', reject)
-          return
-        }
-        if (res.statusCode !== 200) {
-          out.close()
-          try {
-            fs.unlinkSync(tmpPath)
-          } catch {
-            void 0
+        const code = res.statusCode
+        if (code >= 300 && code < 400 && res.headers.location) {
+          res.resume()
+          if (redirectsLeft <= 0) {
+            reject(new Error(`too many redirects for ${url}`))
+            return
           }
-          reject(new Error(`Failed to download ${scriptName}: HTTP ${res.statusCode} from ${url}`))
+          const next = new URL(res.headers.location, url).toString()
+          httpDownload(next, destPath, redirectsLeft - 1).then(resolve, reject)
           return
         }
+        if (code !== 200) {
+          res.resume()
+          reject(new Error(`HTTP ${code} from ${url}`))
+          return
+        }
+        const out = fs.createWriteStream(tmpPath)
         res.pipe(out)
         out.on('finish', () => {
-          out.close()
-          fs.renameSync(tmpPath, destPath)
-          resolve(destPath)
+          out.close(() => {
+            try {
+              fs.renameSync(tmpPath, destPath)
+              resolve(destPath)
+            } catch (err) {
+              reject(err)
+            }
+          })
         })
         out.on('error', err => {
           try {
@@ -196,6 +199,26 @@ function downloadInstallScript(commit, destPath) {
         reject(err)
       })
   })
+}
+
+async function downloadInstallScript(commit, destPath) {
+  // Fetch the install script at the pinned commit. The raw URL with a SHA is
+  // immutable, so no integrity check beyond the caller's syntax probe.
+  // Gitee mirror first (国内可达), GitHub raw as fallback (海外/镜像未同步时).
+  const scriptName = installScriptName()
+  const candidates = [
+    `https://gitee.com/${RUNTIME_MIRROR_OWNER_REPO}/raw/${commit}/scripts/${scriptName}`,
+    `https://raw.githubusercontent.com/NousResearch/hermes-agent/${commit}/scripts/${scriptName}`
+  ]
+  let lastErr
+  for (const url of candidates) {
+    try {
+      return await httpDownload(url, destPath)
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  throw lastErr || new Error(`Failed to download ${scriptName}`)
 }
 
 async function resolveInstallScript({
