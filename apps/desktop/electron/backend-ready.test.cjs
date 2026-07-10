@@ -86,6 +86,13 @@ test('resolves with the announced port', async () => {
   assert.equal(await p, 54321)
 })
 
+test('resolves on the headless serve token HERMES_BACKEND_READY', async () => {
+  const child = makeFakeChild()
+  const p = waitForDashboardPort(child, 1000)
+  child.stdout.emit('data', 'noise before\nHERMES_BACKEND_READY port=59329\n')
+  assert.equal(await p, 59329)
+})
+
 test('parses the port even when the line arrives split across chunks', async () => {
   const child = makeFakeChild()
   const p = waitForDashboardPort(child, 1000)

@@ -1,6 +1,11 @@
 const fs = require('node:fs')
 
-const _READY_RE = /^HERMES_DASHBOARD_READY port=(\d+)/m
+// The headless `serve` backend announces `HERMES_BACKEND_READY port=<N>` while
+// the legacy `dashboard --no-open` fallback announces `HERMES_DASHBOARD_READY
+// port=<N>`. A managed runtime cloned from upstream may be newer than this
+// desktop shell, so accept either token — matching only one silently kills a
+// healthy backend that announced under the other name (90s timeout loop).
+const _READY_RE = /^HERMES_(?:BACKEND|DASHBOARD)_READY port=(\d+)/m
 
 // The announcement clock starts the instant the backend process is spawned —
 // before uvicorn binds its socket. On a cold install the child must first
@@ -30,8 +35,9 @@ function resolvePortAnnounceTimeoutMs(env = process.env) {
 }
 
 /**
- * Watch a child process's stdout for the `HERMES_DASHBOARD_READY port=<N>`
- * line that web_server.py prints after uvicorn binds its socket.
+ * Watch a child process's stdout for the `HERMES_BACKEND_READY port=<N>` (or
+ * legacy `HERMES_DASHBOARD_READY port=<N>`) line that web_server.py prints
+ * after uvicorn binds its socket.
  *
  * Returns the parsed port. Rejects if:
  *   - the child exits before emitting the line
