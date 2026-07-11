@@ -8,7 +8,9 @@ const {
   runBootstrap,
   resolveInstallScript,
   installedAgentInstallScript,
-  cachedScriptPath
+  cachedScriptPath,
+  patchInstallScriptForMirrors,
+  stageSkippedForSpeed
 } = require('./bootstrap-runner.cjs')
 
 const SCRIPT_NAME = process.platform === 'win32' ? 'install.ps1' : 'install.sh'
@@ -134,5 +136,57 @@ test('resolveInstallScript rethrows when the 404 fallback is unavailable', async
     )
   } finally {
     fs.rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// speed: skip optional stages + mirror-patch git-for-windows
+// ---------------------------------------------------------------------------
+
+test('stageSkippedForSpeed skips system-packages by default, honors opt-in', () => {
+  const saved = process.env.TORCH_INSTALL_SYSTEM_PACKAGES
+  try {
+    delete process.env.TORCH_INSTALL_SYSTEM_PACKAGES
+    assert.equal(stageSkippedForSpeed('system-packages'), true)
+    assert.equal(stageSkippedForSpeed('repository'), false)
+    process.env.TORCH_INSTALL_SYSTEM_PACKAGES = '1'
+    assert.equal(stageSkippedForSpeed('system-packages'), false)
+  } finally {
+    if (saved === undefined) delete process.env.TORCH_INSTALL_SYSTEM_PACKAGES
+    else process.env.TORCH_INSTALL_SYSTEM_PACKAGES = saved
+  }
+})
+
+test('patchInstallScriptForMirrors proxies git-for-windows, leaves kernel clone alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-patch-test-'))
+  const savedProxy = process.env.TORCH_GH_PROXY
+  const savedNo = process.env.TORCH_NO_MIRROR
+  try {
+    delete process.env.TORCH_NO_MIRROR
+    process.env.TORCH_GH_PROXY = 'https://gh-proxy.com'
+    const p = path.join(dir, 'install.ps1')
+    fs.writeFileSync(
+      p,
+      '$u = "https://github.com/git-for-windows/git/releases/download/$tag/$asset"\n' +
+        '$RepoUrlHttps = "https://github.com/NousResearch/hermes-agent.git"\n',
+      'utf8'
+    )
+    patchInstallScriptForMirrors(p, 'powershell', null)
+    const out = fs.readFileSync(p, 'utf8')
+    assert.match(
+      out,
+      /"https:\/\/gh-proxy\.com\/https:\/\/github\.com\/git-for-windows\/git\/releases\/download\/\$tag\/\$asset"/
+    )
+    // kernel clone URL must stay untouched (handled by insteadOf, not proxy)
+    assert.match(out, /"https:\/\/github\.com\/NousResearch\/hermes-agent\.git"/)
+    // idempotent: a second pass must not double-prefix
+    patchInstallScriptForMirrors(p, 'powershell', null)
+    assert.equal(fs.readFileSync(p, 'utf8'), out)
+  } finally {
+    if (savedProxy === undefined) delete process.env.TORCH_GH_PROXY
+    else process.env.TORCH_GH_PROXY = savedProxy
+    if (savedNo === undefined) delete process.env.TORCH_NO_MIRROR
+    else process.env.TORCH_NO_MIRROR = savedNo
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 })

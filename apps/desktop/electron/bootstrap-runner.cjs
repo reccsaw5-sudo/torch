@@ -690,6 +690,39 @@ function openRunLog(logRoot) {
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
+// 首启提速:这些阶段在国内奇慢且非必需,默认跳过。ripgrep/ffmpeg 是可选工具
+// (install.ps1 自身也是尽力而为:无 ripgrep 用 findstr 兜底、无 ffmpeg 仅语音受限),
+// 但在国内走 winget 常常要十几分钟。想装回来设 TORCH_INSTALL_SYSTEM_PACKAGES=1。
+const SPEED_SKIP_STAGES = new Set(['system-packages'])
+
+function stageSkippedForSpeed(stageName) {
+  if (process.env.TORCH_INSTALL_SYSTEM_PACKAGES === '1') return false
+  return SPEED_SKIP_STAGES.has(stageName)
+}
+
+// install.ps1 里 git-for-windows(PortableGit)是从 github releases 直接
+// Invoke-WebRequest 下的,国内慢/被重置。下载脚本后就地把这个 URL 前缀改写成走
+// gh-proxy 加速(不动内核 clone 地址——那个由 GIT_CONFIG_GLOBAL 的 insteadOf 处理)。
+// 幂等;失败不致命。TORCH_NO_MIRROR=1 可整体关掉。
+function patchInstallScriptForMirrors(scriptPath, installerKind, emit) {
+  if (process.env.TORCH_NO_MIRROR === '1') return
+  if (installerKind !== 'powershell') return
+  const ghProxy = (process.env.TORCH_GH_PROXY || 'https://gh-proxy.com').replace(/\/+$/, '')
+  if (!ghProxy) return
+  try {
+    let text = fs.readFileSync(scriptPath, 'utf8')
+    const gfwBase = 'https://github.com/git-for-windows/git/releases/download/'
+    const proxied = `${ghProxy}/${gfwBase}`
+    if (text.includes(gfwBase) && !text.includes(proxied)) {
+      text = text.split(gfwBase).join(proxied)
+      fs.writeFileSync(scriptPath, text, 'utf8')
+      if (emit) emit({ type: 'log', line: `[bootstrap] patched git-for-windows download → ${ghProxy}` })
+    }
+  } catch (err) {
+    if (emit) emit({ type: 'log', line: `[bootstrap] mirror patch skipped: ${err && err.message}` })
+  }
+}
+
 async function runBootstrap(opts) {
   const {
     installStamp,
@@ -747,6 +780,7 @@ async function runBootstrap(opts) {
     // 1. Resolve the platform installer.
     const scriptInfo = await resolveInstallScript({ installStamp, sourceRepoRoot, hermesHome, emit })
     const installerKind = scriptInfo.kind || 'powershell'
+    patchInstallScriptForMirrors(scriptInfo.path, installerKind, emit)
 
     // 2. Fetch manifest
     const manifest = await fetchManifest({
@@ -771,6 +805,16 @@ async function runBootstrap(opts) {
       if (abortSignal && abortSignal.aborted) {
         emit({ type: 'failed', error: 'bootstrap cancelled by user' })
         return { ok: false, cancelled: true }
+      }
+      if (stageSkippedForSpeed(stage.name)) {
+        emit({
+          type: 'stage',
+          name: stage.name,
+          state: 'skipped',
+          durationMs: 0,
+          json: { ok: true, skipped: true, reason: 'torch 快速安装:跳过可选工具(ripgrep/ffmpeg)' }
+        })
+        continue
       }
       const ev = await runStage({
         scriptPath: scriptInfo.path,
@@ -815,5 +859,7 @@ module.exports = {
   resolveLocalInstallScript,
   resolveInstallScript,
   installedAgentInstallScript,
-  cachedScriptPath
+  cachedScriptPath,
+  patchInstallScriptForMirrors,
+  stageSkippedForSpeed
 }
