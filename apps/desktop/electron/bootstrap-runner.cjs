@@ -37,6 +37,7 @@
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
+const os = require('node:os')
 const https = require('node:https')
 const { spawn } = require('node:child_process')
 
@@ -48,6 +49,32 @@ const RUNTIME_MIRROR_OWNER_REPO = 'Gitsongsong/hermes-agent'
 const RUNTIME_MIRROR_GIT = `https://gitee.com/${RUNTIME_MIRROR_OWNER_REPO}.git`
 const RUNTIME_UPSTREAM_HTTPS = 'https://github.com/NousResearch/hermes-agent.git'
 const RUNTIME_UPSTREAM_SSH = 'git@github.com:NousResearch/hermes-agent.git'
+
+// install.ps1 覆写 GIT_CONFIG_COUNT(设成 1 只留 windows.appendAtomically),会把用
+// env 注入的 insteadOf 冲掉,导致内核 clone 仍走 github(慢/拉不全→checkout 失败)。
+// install.ps1 不会动 GIT_CONFIG_GLOBAL,所以改用一个临时 gitconfig 文件承载 insteadOf,
+// 并 include 用户原有全局配置(代理/凭据等不丢)。这样 clone 才真正改写到 Gitee。
+let _giteeGitConfigPath = null
+function ensureGiteeGitConfig() {
+  if (_giteeGitConfigPath) return _giteeGitConfigPath
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'torch-git-'))
+    const cfgPath = path.join(dir, 'gitconfig')
+    let content = ''
+    const userGlobal = path.join(os.homedir(), '.gitconfig')
+    if (fs.existsSync(userGlobal)) {
+      content += `[include]\n\tpath = ${userGlobal.replace(/\\/g, '/')}\n`
+    }
+    content += `[url "${RUNTIME_MIRROR_GIT}"]\n`
+    content += `\tinsteadOf = ${RUNTIME_UPSTREAM_HTTPS}\n`
+    content += `\tinsteadOf = ${RUNTIME_UPSTREAM_SSH}\n`
+    fs.writeFileSync(cfgPath, content, 'utf8')
+    _giteeGitConfigPath = cfgPath
+  } catch {
+    _giteeGitConfigPath = null
+  }
+  return _giteeGitConfigPath
+}
 
 // 国内镜像加速:首启时 install.ps1/sh 用 uv/pip 装 Python 依赖、npm 装 node 依赖、
 // uv 下 Python 解释器、git clone 运行内核,默认全走境外源,在国内慢/被重置。这里
@@ -83,14 +110,11 @@ function chinaMirrorEnv() {
       process.env.TORCH_UV_PYTHON_MIRROR ||
       `${ghProxy}/https://github.com/astral-sh/python-build-standalone/releases/download`
   }
-  // 运行内核 clone 换源:git 的 insteadOf 把上游 github 仓库地址改写成 Gitee 镜像,
-  // install 脚本里 clone/fetch origin 会自动走 Gitee。用 GIT_CONFIG_* 注入,不改全局配置。
-  if (!process.env.GIT_CONFIG_COUNT) {
-    out.GIT_CONFIG_COUNT = '2'
-    out.GIT_CONFIG_KEY_0 = `url.${RUNTIME_MIRROR_GIT}.insteadOf`
-    out.GIT_CONFIG_VALUE_0 = RUNTIME_UPSTREAM_HTTPS
-    out.GIT_CONFIG_KEY_1 = `url.${RUNTIME_MIRROR_GIT}.insteadOf`
-    out.GIT_CONFIG_VALUE_1 = RUNTIME_UPSTREAM_SSH
+  // 运行内核 clone 换源→Gitee。经 GIT_CONFIG_GLOBAL 指向临时 gitconfig 里的 insteadOf,
+  // 绕过 install.ps1 对 GIT_CONFIG_COUNT 的覆写(见 ensureGiteeGitConfig 注释)。
+  if (!process.env.GIT_CONFIG_GLOBAL) {
+    const cfg = ensureGiteeGitConfig()
+    if (cfg) out.GIT_CONFIG_GLOBAL = cfg
   }
   return out
 }
