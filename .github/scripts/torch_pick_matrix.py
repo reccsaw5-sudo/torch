@@ -11,7 +11,9 @@ import os
 
 LEGS = [
     {"name": "mac-arm64", "os": "macos-14", "args": "--mac dmg zip --arm64"},
-    {"name": "mac-x64", "os": "macos-13", "args": "--mac dmg zip --x64"},
+    # Intel 交叉打包在 arm64 runner 上进行:macos-13(Intel)runner 已枯竭常年排队,
+    # 而 node-pty 通过 prebuildify 内置了 darwin-x64 预编译,electron-builder --x64 可正确交叉出包。
+    {"name": "mac-x64", "os": "macos-14", "args": "--mac dmg zip --x64"},
     {"name": "win-x64", "os": "windows-latest", "args": "--win nsis msi --x64"},
     {"name": "win-ia32", "os": "windows-latest", "args": "--win nsis --ia32"},
     {"name": "linux-x64", "os": "ubuntu-latest", "args": "--linux AppImage deb rpm"},
