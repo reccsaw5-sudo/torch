@@ -53,31 +53,11 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return (await res.json()) as T
 }
 
-export interface ModelRow {
-  id: number
-  model: string
-  upstream_base_url: string
-  upstream_model: string | null
-  upstream_api_key: string
-  price: number
-  enabled: number
-  created_at: number
-}
-
 export interface UserRow {
   id: number
   username: string
   email: string
   created_at: number
-}
-
-export interface ModelUpsert {
-  model: string
-  upstream_base_url: string
-  upstream_model?: string
-  upstream_api_key?: string
-  price: number
-  enabled: boolean
 }
 
 export interface SuggestionRow {
@@ -138,10 +118,6 @@ export interface BuildFile {
 export const api = {
   // Validate the admin token by hitting a gated endpoint.
   verifyToken: () => req<{ data: UserRow[] }>('GET', '/admin/users'),
-
-  listModels: () => req<{ data: ModelRow[] }>('GET', '/admin/models'),
-  upsertModel: (m: ModelUpsert) => req<{ status: string }>('POST', '/admin/models', m),
-  deleteModel: (id: number) => req<{ status: string }>('DELETE', `/admin/models/${id}`),
 
   listUsers: () => req<{ data: UserRow[] }>('GET', '/admin/users'),
 

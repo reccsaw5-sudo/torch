@@ -149,18 +149,6 @@ _DDL = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_apikeys_key ON api_keys(api_key)",
-    """
-    CREATE TABLE IF NOT EXISTS model_catalog (
-        id SERIAL PRIMARY KEY,
-        model TEXT UNIQUE NOT NULL,
-        upstream_base_url TEXT NOT NULL,
-        upstream_model TEXT,
-        upstream_api_key TEXT,
-        price INTEGER NOT NULL DEFAULT 1,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        created_at BIGINT NOT NULL
-    )
-    """,
     "CREATE TABLE IF NOT EXISTS brand_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     """
     CREATE TABLE IF NOT EXISTS brand_assets (
@@ -217,6 +205,8 @@ _DDL = [
     "DROP TABLE IF EXISTS credits_ledger CASCADE",
     "DROP TABLE IF EXISTS payment_config CASCADE",
     "ALTER TABLE users DROP COLUMN IF EXISTS balance",
+    # 去计量代理:模型目录只服务旧的 /v1 代理,已废弃。
+    "DROP TABLE IF EXISTS model_catalog CASCADE",
 ]
 
 # Default home-screen task cards + marketplace skills, seeded on first run so a
@@ -241,14 +231,6 @@ def _init_db() -> None:
     with _db() as conn:
         for stmt in _DDL:
             conn.execute(stmt)
-        row = conn.execute("SELECT COUNT(*) AS n FROM model_catalog").fetchone()
-        if row["n"] == 0:
-            conn.execute(
-                "INSERT INTO model_catalog(model, upstream_base_url, upstream_model,"
-                " upstream_api_key, price, enabled, created_at)"
-                " VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                ("torch-mock", "mock", "torch-mock", "", 1, 1, int(time.time())),
-            )
         for k, v in _BRAND_DEFAULTS.items():
             conn.execute(
                 "INSERT INTO brand_config(key, value) VALUES (%s,%s)"
@@ -955,65 +937,6 @@ def wechat_login_poll(state: str) -> dict:
 # --------------------------------------------------------------------------
 # Admin (X-Admin-Token)
 # --------------------------------------------------------------------------
-class ModelUpsert(BaseModel):
-    model: str
-    upstream_base_url: str
-    upstream_model: Optional[str] = None
-    upstream_api_key: Optional[str] = None
-    price: int = 1
-    enabled: bool = True
-
-
-@app.get("/admin/models")
-def admin_list_models(x_admin_token: Optional[str] = Header(default=None)) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        rows = conn.execute("SELECT * FROM model_catalog ORDER BY id").fetchall()
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["upstream_api_key"] = "***" if d.get("upstream_api_key") else ""
-        out.append(d)
-    return {"data": out}
-
-
-@app.post("/admin/models")
-def admin_upsert_model(
-    payload: ModelUpsert, x_admin_token: Optional[str] = Header(default=None)
-) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        conn.execute(
-            "INSERT INTO model_catalog(model, upstream_base_url, upstream_model,"
-            " upstream_api_key, price, enabled, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)"
-            " ON CONFLICT (model) DO UPDATE SET"
-            " upstream_base_url = EXCLUDED.upstream_base_url,"
-            " upstream_model = EXCLUDED.upstream_model,"
-            " upstream_api_key = EXCLUDED.upstream_api_key,"
-            " price = EXCLUDED.price, enabled = EXCLUDED.enabled",
-            (
-                payload.model,
-                payload.upstream_base_url,
-                payload.upstream_model,
-                payload.upstream_api_key,
-                int(payload.price),
-                1 if payload.enabled else 0,
-                int(time.time()),
-            ),
-        )
-    return {"status": "ok", "model": payload.model}
-
-
-@app.delete("/admin/models/{model_id}")
-def admin_delete_model(
-    model_id: int, x_admin_token: Optional[str] = Header(default=None)
-) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        conn.execute("DELETE FROM model_catalog WHERE id = %s", (model_id,))
-    return {"status": "ok"}
-
-
 @app.get("/admin/users")
 def admin_list_users(x_admin_token: Optional[str] = Header(default=None)) -> dict:
     _require_admin(x_admin_token)
