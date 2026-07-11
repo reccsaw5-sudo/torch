@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 
 import { getActiveTorchKey } from '@/store/torch-api-keys'
-import { $torchBrand, loadTorchBrand } from '@/store/torch-brand'
+import { TORCH_INFERENCE_BASE } from '@/store/torch-brand'
 import { $torchLogin } from '@/store/torch-login'
 import { $torchModels, loadTorchModels, readSelectedTorchModel } from '@/store/torch-models'
 
@@ -110,8 +110,7 @@ export async function translateStrings(texts: (string | null | undefined)[]): Pr
     return
   }
 
-  await loadTorchBrand()
-  const base = $torchBrand.get().apiBaseUrl
+  const base = TORCH_INFERENCE_BASE
   const key = getActiveTorchKey()
   if (!base || !key) {
     return
@@ -148,7 +147,7 @@ export async function translateStrings(texts: (string | null | undefined)[]): Pr
   try {
     for (const batch of chunk(pending, CHUNK_SIZE)) {
       try {
-        const res = await fetch(`${base}/chat/completions`, {
+        const res = await fetch(`${base}/v1/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

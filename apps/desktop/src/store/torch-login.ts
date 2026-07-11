@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 import { getActiveTorchKey } from './torch-api-keys'
-import { $torchBrand, loadTorchBrand } from './torch-brand'
+import { TORCH_INFERENCE_BASE } from './torch-brand'
 import { applyTorchModelAssignment, torchModelsUrl } from './torch-routing'
 
 // The brand account server (business backend: login + account management).
@@ -103,11 +103,9 @@ async function resolveModel(baseUrl: string, apiKey: string): Promise<string> {
 // Point Hermes' main model at the built-in gateway, routed to the model's
 // native protocol (see torch-routing.ts) with the user's active key. Re-applied
 // on every startup so the branded client survives any Hermes-side config reset.
-// No-op until the brand's api_base_url is loaded AND the user has added at least
-// one key.
+// No-op until the user has added at least one key.
 export async function reapplyTorchModel() {
-  await loadTorchBrand()
-  const base = $torchBrand.get().apiBaseUrl
+  const base = TORCH_INFERENCE_BASE
   const key = getActiveTorchKey()
 
   if (!base || !key) {

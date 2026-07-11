@@ -2,10 +2,11 @@ import { setModelAssignment } from '@/hermes'
 
 // Per-model protocol routing for the branded client's built-in gateway.
 //
-// The admin-configured built-in address (brand.api_base_url) is treated as the
-// gateway *domain root* (a self-hosted new-api). new-api speaks several native
-// wire protocols under one host + one token, so the client picks the protocol
-// that matches the chosen model instead of flattening everything to OpenAI:
+// The built-in address (TORCH_INFERENCE_BASE, baked into the client) is treated
+// as the gateway *domain root* (a self-hosted new-api). new-api speaks several
+// native wire protocols under one host + one token, so the client picks the
+// protocol that matches the chosen model instead of flattening everything to
+// OpenAI:
 //
 //   claude* / anthropic*  → Anthropic Messages  (POST {root}/v1/messages)
 //   gpt* / o[1-9]* / codex / chatgpt → OpenAI Responses (POST {root}/v1/responses)
