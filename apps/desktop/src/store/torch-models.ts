@@ -1,14 +1,15 @@
 import { atom } from 'nanostores'
 
-import { setModelAssignment } from '@/hermes'
-
 import { getActiveTorchKey } from './torch-api-keys'
 import { $torchBrand, loadTorchBrand } from './torch-brand'
+import { applyTorchModelAssignment, torchModelsUrl } from './torch-routing'
 
 // Torch model catalog: the branded client points Hermes' main model at the
-// admin-configured built-in inference endpoint (brand.api_base_url, an
-// OpenAI-compatible base). The catalog is fetched from `${base}/models` using
-// the user's own API key — no upstream Hermes provider universe is surfaced.
+// admin-configured built-in gateway (brand.api_base_url, treated as the domain
+// root of a self-hosted new-api). The catalog is fetched from `{root}/v1/models`
+// using the user's own API key; the chosen model is then routed to its native
+// protocol (see torch-routing.ts) — no upstream Hermes provider universe is
+// surfaced.
 const SELECTED_KEY = 'torch_selected_model'
 
 export const $torchModels = atom<string[]>([])
@@ -44,7 +45,7 @@ export async function loadTorchModels(): Promise<string[]> {
   }
 
   try {
-    const res = await fetch(`${base}/models`, {
+    const res = await fetch(torchModelsUrl(base), {
       headers: { Authorization: `Bearer ${key}` }
     })
     const data = (await res.json()) as { data?: { id: string }[] }
@@ -58,9 +59,10 @@ export async function loadTorchModels(): Promise<string[]> {
   }
 }
 
-// Persist a model as the profile default, routed through the built-in endpoint
-// (provider=custom + brand base_url + active user key). Mirrors the login-time
-// assignment so the choice survives restarts and applies to new conversations.
+// Persist a model as the profile default, routed through the built-in gateway
+// to the model's native protocol (see torch-routing.ts) with the active user
+// key. Mirrors the login-time assignment so the choice survives restarts and
+// applies to new conversations.
 export async function applyTorchModel(model: string) {
   const base = $torchBrand.get().apiBaseUrl
   const key = getActiveTorchKey()
@@ -69,12 +71,6 @@ export async function applyTorchModel(model: string) {
     return
   }
 
-  await setModelAssignment({
-    scope: 'main',
-    provider: 'custom',
-    model,
-    base_url: base,
-    api_key: key
-  })
+  await applyTorchModelAssignment(model, base, key)
   writeSelectedTorchModel(model)
 }

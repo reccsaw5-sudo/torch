@@ -885,6 +885,10 @@ export interface ModelAssignmentRequest {
   /** OpenAI-compatible endpoint URL. Only honored for custom/local providers
    *  on the main slot — wires a self-hosted endpoint into runtime resolution. */
   base_url?: string
+  /** Wire-protocol override persisted to model.api_mode (and, for a
+   *  custom:<name> provider, that entry). One of "chat_completions",
+   *  "codex_responses", "anthropic_messages". Empty → runtime auto-detects. */
+  api_mode?: string
   model: string
   provider: string
   scope: 'main' | 'auxiliary'

@@ -932,6 +932,12 @@ class ModelAssignment(BaseModel):
     # ``hermes model`` custom flow collects. Honored only on the main slot for
     # custom/local providers.
     api_key: str = ""
+    # Optional wire-protocol override persisted to ``model.api_mode`` and, for
+    # a ``custom:<name>`` named provider, to that provider entry. Lets the GUI
+    # pin a model to ``anthropic_messages`` / ``codex_responses`` /
+    # ``chat_completions`` when routing through a multi-protocol gateway
+    # (e.g. a self-hosted new-api). Empty → leave resolution to auto-detect.
+    api_mode: str = ""
     confirm_expensive_model: bool = False
     profile: Optional[str] = None
 
@@ -1034,8 +1040,73 @@ def _normalize_main_model_assignment(provider: str, model: str) -> tuple[str, st
     return prov_in, model_in
 
 
+def _upsert_named_custom_provider(
+    cfg: dict, name: str, base_url: str, api_key: str, api_mode: str, model: str
+) -> None:
+    """Upsert a ``custom:<name>`` provider entry (by name) into ``cfg`` in place.
+
+    Unlike ``_save_custom_provider`` (which dedups by ``base_url``), this keys on
+    the provider *name*, so several named providers can share one gateway URL
+    while carrying different ``api_mode`` values — the exact shape a multi-
+    protocol gateway (self-hosted new-api) needs: ``torch-openai`` and
+    ``torch-responses`` both point at ``https://host/v1`` yet resolve to
+    ``chat_completions`` vs ``codex_responses``. Updates an existing entry in
+    either the new-style ``providers`` dict or the legacy ``custom_providers``
+    list (whichever already holds the name); otherwise appends to
+    ``custom_providers``. The runtime resolver reads both formats via
+    ``get_compatible_custom_providers``.
+    """
+    name = (name or "").strip()
+    base_url = (base_url or "").strip()
+    if not name or not base_url:
+        return
+    name_norm = name.lower().replace(" ", "-")
+
+    def _write(entry: dict) -> None:
+        entry["name"] = name
+        entry["base_url"] = base_url
+        if api_key:
+            entry["api_key"] = api_key
+        if model:
+            entry["model"] = model
+        if api_mode.strip():
+            entry["api_mode"] = api_mode.strip()
+            entry.pop("transport", None)
+        else:
+            entry.pop("api_mode", None)
+
+    # Prefer updating an existing entry wherever it already lives so we never
+    # leave a stale duplicate that the resolver would match first.
+    providers = cfg.get("providers")
+    if isinstance(providers, dict):
+        for key, entry in providers.items():
+            if not isinstance(entry, dict):
+                continue
+            if str(key).strip().lower().replace(" ", "-") == name_norm or str(
+                entry.get("name", "")
+            ).strip().lower().replace(" ", "-") == name_norm:
+                _write(entry)
+                return
+
+    custom = cfg.get("custom_providers")
+    if not isinstance(custom, list):
+        custom = []
+    for entry in custom:
+        if isinstance(entry, dict) and str(entry.get("name", "")).strip().lower().replace(
+            " ", "-"
+        ) == name_norm:
+            _write(entry)
+            cfg["custom_providers"] = custom
+            return
+    new_entry: dict = {}
+    _write(new_entry)
+    custom.append(new_entry)
+    cfg["custom_providers"] = custom
+
+
 def _apply_main_model_assignment(
-    model_cfg: "Any", provider: str, model: str, base_url: str = "", api_key: str = ""
+    model_cfg: "Any", provider: str, model: str, base_url: str = "", api_key: str = "",
+    api_mode: str = "",
 ) -> dict:
     """Apply a main-slot model assignment to a ``model`` config dict in place.
 
@@ -1086,6 +1157,13 @@ def _apply_main_model_assignment(
         clear_model_endpoint_credentials(model_cfg, clear_api_mode=False)
     if new_provider != prev_provider:
         clear_model_endpoint_credentials(model_cfg, clear_api_key=False)
+    # Persist an explicit wire-protocol override last, so it survives the
+    # provider-switch credential clear above. Same lifecycle as base_url/
+    # api_key: an explicit mode is always written; a stale one is dropped on a
+    # provider switch (handled by clear_model_endpoint_credentials) when no new
+    # mode is supplied.
+    if api_mode.strip():
+        model_cfg["api_mode"] = api_mode.strip()
     model_cfg.pop("context_length", None)
     return model_cfg
 
@@ -4502,6 +4580,7 @@ async def set_model_assignment(body: ModelAssignment, profile: Optional[str] = N
     task = (body.task or "").strip().lower()
     base_url = (body.base_url or "").strip()
     api_key = (body.api_key or "").strip()
+    api_mode = (body.api_mode or "").strip()
 
     if scope not in {"main", "auxiliary"}:
         raise HTTPException(status_code=400, detail="scope must be 'main' or 'auxiliary'")
@@ -4538,7 +4617,7 @@ async def set_model_assignment(body: ModelAssignment, profile: Optional[str] = N
         def _apply_assignment():
             with _profile_scope(body.profile or profile):
                 return _apply_model_assignment_sync(
-                    scope, provider, model, task, base_url, api_key
+                    scope, provider, model, task, base_url, api_key, api_mode
                 )
 
         return await asyncio.to_thread(_apply_assignment)
@@ -4550,7 +4629,8 @@ async def set_model_assignment(body: ModelAssignment, profile: Optional[str] = N
 
 
 def _apply_model_assignment_sync(
-    scope: str, provider: str, model: str, task: str, base_url: str, api_key: str = ""
+    scope: str, provider: str, model: str, task: str, base_url: str, api_key: str = "",
+    api_mode: str = "",
 ):
     """Synchronous body of POST /api/model/set.
 
@@ -4563,11 +4643,24 @@ def _apply_model_assignment_sync(
     if scope == "main":
         if not provider or not model:
             raise HTTPException(status_code=400, detail="provider and model required for main")
-        provider, model = _normalize_main_model_assignment(provider, model)
+        # A ``custom:<name>`` named provider is an explicit, self-describing
+        # routing identity — skip the vendor-prefix repair (it only applies to
+        # bare provider slugs) so the colon-qualified name survives verbatim.
+        if not provider.startswith("custom:"):
+            provider, model = _normalize_main_model_assignment(provider, model)
         model_cfg = _apply_main_model_assignment(
-            cfg.get("model", {}), provider, model, base_url, api_key
+            cfg.get("model", {}), provider, model, base_url, api_key, api_mode
         )
         cfg["model"] = model_cfg
+
+        # Register/point at a named custom provider so a per-model wire protocol
+        # (anthropic_messages / codex_responses) survives the bare-``custom``
+        # api_mode guard, which only honors codex_responses for direct
+        # OpenAI/xAI hosts. Named providers carry their own api_mode.
+        if provider.startswith("custom:"):
+            _upsert_named_custom_provider(
+                cfg, provider.split(":", 1)[1], base_url, api_key, api_mode, model
+            )
 
         # When switching the main provider to Nous, mirror the CLI's
         # post-model-selection behaviour (hermes_cli/main.py

@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 
 const FIELDS: { key: string; label: string }[] = [
-  { key: 'api_base_url', label: '内置推理地址（OpenAI 兼容，如 https://xxx/v1，客户端锁定只读、用户自带 Key）' },
+  { key: 'api_base_url', label: '内置推理地址（new-api 域名根，如 https://your-newapi.com，不要带 /v1；客户端按模型自动选协议、锁定只读、用户自带 Key）' },
   { key: 'app_name', label: '客户端内部名（英文/包名用）' },
   { key: 'app_display_name', label: '客户端显示名' },
   { key: 'app_version', label: '客户端版本号' },

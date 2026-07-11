@@ -1,9 +1,8 @@
 import { atom } from 'nanostores'
 
-import { setModelAssignment } from '@/hermes'
-
 import { getActiveTorchKey } from './torch-api-keys'
 import { $torchBrand, loadTorchBrand } from './torch-brand'
+import { applyTorchModelAssignment, torchModelsUrl } from './torch-routing'
 
 // The brand account server (business backend: login + account management).
 // Baked into the branded client; override at build time with VITE_TORCH_SERVER.
@@ -83,7 +82,7 @@ async function resolveModel(baseUrl: string, apiKey: string): Promise<string> {
   }
 
   try {
-    const res = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } })
+    const res = await fetch(torchModelsUrl(baseUrl), { headers: { Authorization: `Bearer ${apiKey}` } })
     const data = (await res.json()) as { data?: { id: string }[] }
     const ids = (data.data ?? []).map(m => m.id).filter(Boolean)
 
@@ -101,10 +100,11 @@ async function resolveModel(baseUrl: string, apiKey: string): Promise<string> {
   return saved
 }
 
-// Point Hermes' main model at the built-in endpoint (provider=custom, brand
-// base_url + the user's active key). Re-applied on every startup so the branded
-// client survives any Hermes-side config reset. No-op until the brand's
-// api_base_url is loaded AND the user has added at least one key.
+// Point Hermes' main model at the built-in gateway, routed to the model's
+// native protocol (see torch-routing.ts) with the user's active key. Re-applied
+// on every startup so the branded client survives any Hermes-side config reset.
+// No-op until the brand's api_base_url is loaded AND the user has added at least
+// one key.
 export async function reapplyTorchModel() {
   await loadTorchBrand()
   const base = $torchBrand.get().apiBaseUrl
@@ -120,7 +120,7 @@ export async function reapplyTorchModel() {
     return
   }
 
-  await setModelAssignment({ scope: 'main', provider: 'custom', model, base_url: base, api_key: key })
+  await applyTorchModelAssignment(model, base, key)
 }
 
 async function configure(result: AuthResult, onDone?: () => void) {
