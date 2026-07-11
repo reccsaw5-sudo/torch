@@ -10,17 +10,17 @@ Storage: PostgreSQL (both the client-facing "前台" endpoints and the admin
 "后台" endpoints share this one database).
 
 Responsibilities:
-- Store: users / api_keys / credits ledger / model catalog / brand config
-- Auth endpoints: register/login (email + password) -> issues an inference key
-- OpenAI-compatible metering proxy: /v1/models, /v1/chat/completions
-  (verify inference key -> check credits -> forward upstream -> deduct)
-- Admin endpoints (X-Admin-Token): model catalog CRUD, users, credits, brand
-- Brand center: /brand (public read) + /admin/brand (write)
+- Store: users / api_keys (account token) / brand config
+- Auth endpoints: register/login (email + password) + 微信订阅号登录 -> issues an
+  account token (used for /account/*). Inference does NOT run through this
+  server: the client uses the brand `api_base_url` + the user's own API key(s).
+  No credits, no metering, no payment.
+- Admin endpoints (X-Admin-Token): users, brand, suggestions, skills, build
+- Brand center: /brand (public read, includes api_base_url) + /admin/brand
 
 Env overrides (no code change needed):
   TORCH_DATABASE_URL       default postgresql://torch:torch@127.0.0.1:5433/torch
   TORCH_ADMIN_TOKEN        default dev-admin
-  TORCH_SIGNUP_CREDITS     default 1000
   TORCH_PUBLIC_BASE        default http://127.0.0.1:8080
   TORCH_HOST / TORCH_PORT  default 127.0.0.1 / 8080
   TORCH_TRUST_ENV          force httpx proxy on/off (default: off for loopback)
@@ -34,32 +34,30 @@ import json
 import os
 import secrets
 import time
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from typing import Optional
-from urllib.parse import parse_qsl, quote, urlparse
+from urllib.parse import parse_qsl, urlparse
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import Response
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
-
-import payments
 
 DATABASE_URL = os.getenv(
     "TORCH_DATABASE_URL", "postgresql://torch:torch@127.0.0.1:5433/torch"
 )
 ADMIN_TOKEN = os.getenv("TORCH_ADMIN_TOKEN", "dev-admin")
-SIGNUP_CREDITS = int(os.getenv("TORCH_SIGNUP_CREDITS", "1000"))
 PUBLIC_BASE = os.getenv("TORCH_PUBLIC_BASE", "http://127.0.0.1:8080").rstrip("/")
-INFERENCE_BASE = f"{PUBLIC_BASE}/v1"
 
 # Brand center — every value here is editable from the admin API and read by
 # the client (icon/name/version) and the official website (site name/links).
 # The desktop packaging pipeline reads /brand to stamp the built app.
+#   api_base_url  内置推理地址(OpenAI 兼容),客户端锁定只读、用户自带 Key。
 _BRAND_DEFAULTS: dict[str, str] = {
     "app_name": "Torch",
     "app_display_name": "Torch",
@@ -72,52 +70,28 @@ _BRAND_DEFAULTS: dict[str, str] = {
     "download_url_win": "",
     "support_email": "",
     "primary_color": "#000000",
+    "api_base_url": "",
 }
 _BRAND_KEYS = set(_BRAND_DEFAULTS)
 
-# Payment / recharge config — every value editable from the admin API. Inert
-# until `enabled=1` and a provider's own `*_enabled=1` + credentials are set.
-# Amounts are in RMB fen (整数分) everywhere to avoid float rounding.
-PAYMENT_DEFAULTS: dict[str, str] = {
-    "enabled": "0",
-    "currency": "CNY",
-    # Public base the payment providers can reach for async notifications.
-    # Empty -> falls back to PUBLIC_BASE. MUST be a public HTTPS URL in prod.
-    "notify_base": "",
-    # WeChat Pay (Native / 扫码支付, API v3)
-    "wechat_enabled": "0",
-    "wechat_appid": "",
-    "wechat_mchid": "",
-    "wechat_cert_serial_no": "",
-    "wechat_api_v3_key": "",
-    "wechat_private_key": "",
-    # Alipay (当面付 / precreate)
-    "alipay_enabled": "0",
-    "alipay_appid": "",
-    "alipay_app_private_key": "",
-    "alipay_public_key": "",
-    "alipay_sandbox": "0",
-}
-_PAYMENT_KEYS = set(PAYMENT_DEFAULTS)
-# Never echoed back in plaintext by the admin read endpoint.
-_PAYMENT_SECRET_KEYS = {
-    "wechat_api_v3_key",
-    "wechat_private_key",
-    "alipay_app_private_key",
-}
-
-# WeChat scan-to-login (微信开放平台「网站应用」/ 扫码登录). Editable from admin.
-# Inert until enabled=1 with an AppID + AppSecret. `redirect` must be a public
-# HTTPS URL under a domain registered on the WeChat Open Platform app; empty
-# falls back to PUBLIC_BASE + /auth/wechat/callback.
+# WeChat 订阅号登录 (未认证订阅号 / 关注 + 发验证码登录). Editable from admin.
+# Inert until enabled=1 with a server-config Token. Flow: the client shows the
+# uploaded follow-QR (`wechat_mp_qr`, a data URL) + a 6-digit code; the user
+# follows the account and sends the code to it; the account's message webhook
+# (/wechat/mp/callback, 明文模式) receives {OpenID, code}, matches the pending
+# login session, binds the OpenID and logs in.
+#   wechat_mp_enabled  on/off
+#   wechat_mp_token    服务器配置 Token (used for signature verification)
+#   wechat_mp_appid    订阅号 AppID (optional, informational)
+#   wechat_mp_qr       uploaded follow-QR image, stored inline as a data URL
 WECHAT_LOGIN_DEFAULTS: dict[str, str] = {
-    "wechat_login_enabled": "0",
-    "wechat_login_appid": "",
-    "wechat_login_secret": "",
-    "wechat_login_redirect": "",
+    "wechat_mp_enabled": "0",
+    "wechat_mp_token": "",
+    "wechat_mp_appid": "",
+    "wechat_mp_qr": "",
 }
 _AUTH_KEYS = set(WECHAT_LOGIN_DEFAULTS)
-_AUTH_SECRET_KEYS = {"wechat_login_secret"}
+_AUTH_SECRET_KEYS = {"wechat_mp_token"}
 
 # Desktop client packaging — editable from admin. The admin "客户端构建" page
 # uses this to remote-trigger the GitHub Actions packaging workflow and to show
@@ -162,7 +136,6 @@ _DDL = [
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         username TEXT,
-        balance INTEGER NOT NULL DEFAULT 0,
         created_at BIGINT NOT NULL
     )
     """,
@@ -176,16 +149,6 @@ _DDL = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_apikeys_key ON api_keys(api_key)",
-    """
-    CREATE TABLE IF NOT EXISTS credits_ledger (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        delta INTEGER NOT NULL,
-        reason TEXT,
-        created_at BIGINT NOT NULL
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_ledger_user ON credits_ledger(user_id)",
     """
     CREATE TABLE IF NOT EXISTS model_catalog (
         id SERIAL PRIMARY KEY,
@@ -231,34 +194,6 @@ _DDL = [
         created_at BIGINT NOT NULL
     )
     """,
-    "CREATE TABLE IF NOT EXISTS payment_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
-    """
-    CREATE TABLE IF NOT EXISTS recharge_packages (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        amount_fen INTEGER NOT NULL,
-        credits INTEGER NOT NULL,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        created_at BIGINT NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS orders (
-        id SERIAL PRIMARY KEY,
-        out_trade_no TEXT UNIQUE NOT NULL,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        package_id INTEGER,
-        provider TEXT NOT NULL,
-        amount_fen INTEGER NOT NULL,
-        credits INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        transaction_id TEXT NOT NULL DEFAULT '',
-        created_at BIGINT NOT NULL,
-        paid_at BIGINT
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id)",
     "CREATE TABLE IF NOT EXISTS auth_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS build_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     """
@@ -269,10 +204,19 @@ _DDL = [
         created_at BIGINT NOT NULL
     )
     """,
+    # 订阅号登录:用户把这个 6 位码发给公众号,webhook 靠它匹配 pending 会话。
+    "ALTER TABLE wechat_login_states ADD COLUMN IF NOT EXISTS code TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_wls_code ON wechat_login_states(code)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS wx_openid TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS wx_unionid TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_wx_openid ON users(wx_openid)"
     " WHERE wx_openid IS NOT NULL",
+    # 去积分/支付:改为「用户自带 Key」后,清掉计费相关的表与列。
+    "DROP TABLE IF EXISTS orders CASCADE",
+    "DROP TABLE IF EXISTS recharge_packages CASCADE",
+    "DROP TABLE IF EXISTS credits_ledger CASCADE",
+    "DROP TABLE IF EXISTS payment_config CASCADE",
+    "ALTER TABLE users DROP COLUMN IF EXISTS balance",
 ]
 
 # Default home-screen task cards + marketplace skills, seeded on first run so a
@@ -293,14 +237,6 @@ _SEED_SKILLS = [
      "# code-review\n\n对提供的代码做结构化审查：可读性、边界情况、安全性与性能建议。", 30),
 ]
 
-# Default recharge packages (amount in RMB fen). Editable from admin.
-_SEED_PACKAGES = [
-    ("入门包", 990, 1000, 10),
-    ("标准包", 4900, 6000, 20),
-    ("专业包", 9900, 13000, 30),
-]
-
-
 def _init_db() -> None:
     with _db() as conn:
         for stmt in _DDL:
@@ -319,12 +255,6 @@ def _init_db() -> None:
                 " ON CONFLICT (key) DO NOTHING",
                 (k, v),
             )
-        for k, v in PAYMENT_DEFAULTS.items():
-            conn.execute(
-                "INSERT INTO payment_config(key, value) VALUES (%s,%s)"
-                " ON CONFLICT (key) DO NOTHING",
-                (k, v),
-            )
         for k, v in WECHAT_LOGIN_DEFAULTS.items():
             conn.execute(
                 "INSERT INTO auth_config(key, value) VALUES (%s,%s)"
@@ -337,13 +267,6 @@ def _init_db() -> None:
                 " ON CONFLICT (key) DO NOTHING",
                 (k, v),
             )
-        if conn.execute("SELECT COUNT(*) AS n FROM recharge_packages").fetchone()["n"] == 0:
-            for title, amount_fen, credits, order in _SEED_PACKAGES:
-                conn.execute(
-                    "INSERT INTO recharge_packages(title, amount_fen, credits,"
-                    " sort_order, enabled, created_at) VALUES (%s,%s,%s,%s,1,%s)",
-                    (title, amount_fen, credits, order, int(time.time())),
-                )
         if conn.execute("SELECT COUNT(*) AS n FROM suggestions").fetchone()["n"] == 0:
             for title, subtitle, prompt, order in _SEED_SUGGESTIONS:
                 conn.execute(
@@ -360,35 +283,12 @@ def _init_db() -> None:
                 )
 
 
-def _grant(conn, user_id: int, delta: int, reason: str) -> None:
-    conn.execute(
-        "INSERT INTO credits_ledger(user_id, delta, reason, created_at) VALUES (%s,%s,%s,%s)",
-        (user_id, delta, reason, int(time.time())),
-    )
-    conn.execute("UPDATE users SET balance = balance + %s WHERE id = %s", (delta, user_id))
-
-
 def _user_by_key(conn, api_key: str):
     return conn.execute(
         "SELECT u.* FROM users u JOIN api_keys k ON k.user_id = u.id"
         " WHERE k.api_key = %s AND k.revoked = 0",
         (api_key,),
     ).fetchone()
-
-
-def _payment_all(conn) -> dict:
-    rows = conn.execute("SELECT key, value FROM payment_config").fetchall()
-    data = {r["key"]: r["value"] for r in rows}
-    for k, v in PAYMENT_DEFAULTS.items():
-        data.setdefault(k, v)
-    return data
-
-
-def _mask_payment(cfg: dict) -> dict:
-    """Replace stored secrets with a sentinel so the admin UI never sees them."""
-    return {
-        k: ("***" if k in _PAYMENT_SECRET_KEYS and v else v) for k, v in cfg.items()
-    }
 
 
 def _auth_all(conn) -> dict:
@@ -424,29 +324,42 @@ def _github_headers(token: str) -> dict:
     }
 
 
-def _wechat_login_enabled(cfg: dict) -> bool:
-    return (
-        cfg.get("wechat_login_enabled") == "1"
-        and bool(cfg.get("wechat_login_appid"))
-        and bool(cfg.get("wechat_login_secret"))
-    )
+def _wechat_mp_enabled(cfg: dict) -> bool:
+    return cfg.get("wechat_mp_enabled") == "1" and bool(cfg.get("wechat_mp_token"))
 
 
-def _wechat_redirect(cfg: dict) -> str:
-    return (cfg.get("wechat_login_redirect") or "").strip() or f"{PUBLIC_BASE}/auth/wechat/callback"
+def _wechat_mp_signature(token: str, timestamp: str, nonce: str) -> str:
+    """WeChat server-config signature: sha1 of the sorted [token,timestamp,nonce]."""
+    joined = "".join(sorted([token or "", timestamp or "", nonce or ""]))
+    return hashlib.sha1(joined.encode("utf-8")).hexdigest()
 
 
-def _wechat_html(msg: str) -> Response:
+def _wechat_mp_reply(to_user: str, from_user: str, content: str) -> Response:
+    """明文模式被动回复(公众号 -> 用户):ToUserName/FromUserName 相对入站消息互换。"""
     body = (
-        "<!doctype html><html lang='zh'><head><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>微信登录</title><style>body{margin:0;height:100vh;display:flex;"
-        "align-items:center;justify-content:center;font-family:system-ui,-apple-system,"
-        "'PingFang SC',sans-serif;background:#fff;color:#111}div{text-align:center}"
-        "p{font-size:15px;color:#444}</style></head><body><div>"
-        f"<p>{msg}</p></div></body></html>"
+        "<xml>"
+        f"<ToUserName><![CDATA[{to_user}]]></ToUserName>"
+        f"<FromUserName><![CDATA[{from_user}]]></FromUserName>"
+        f"<CreateTime>{int(time.time())}</CreateTime>"
+        "<MsgType><![CDATA[text]]></MsgType>"
+        f"<Content><![CDATA[{content}]]></Content>"
+        "</xml>"
     )
-    return Response(content=body, media_type="text/html")
+    return Response(content=body, media_type="application/xml")
+
+
+def _wechat_mp_new_code(conn) -> str:
+    """Allocate a 6-digit login code not currently held by a pending session."""
+    for _ in range(20):
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        exists = conn.execute(
+            "SELECT 1 FROM wechat_login_states"
+            " WHERE code = %s AND status = 'pending'",
+            (code,),
+        ).fetchone()
+        if exists is None:
+            return code
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
 def _wechat_get_or_create_user(conn, openid: str, unionid: str, nickname: str):
@@ -459,49 +372,11 @@ def _wechat_get_or_create_user(conn, openid: str, unionid: str, nickname: str):
     username = (nickname or "").strip() or f"微信用户{openid[-6:]}"
     pw = _hash_password(secrets.token_hex(16))
     user_id = conn.execute(
-        "INSERT INTO users(email, password_hash, username, balance, created_at,"
-        " wx_openid, wx_unionid) VALUES (%s,%s,%s,0,%s,%s,%s) RETURNING id",
+        "INSERT INTO users(email, password_hash, username, created_at,"
+        " wx_openid, wx_unionid) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
         (email, pw, username, int(time.time()), openid, unionid or None),
     ).fetchone()["id"]
-    _grant(conn, user_id, SIGNUP_CREDITS, "signup_grant:wechat")
     return conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
-
-
-def _credit_paid_order(
-    out_trade_no: str, provider: str, paid_amount_fen: int, transaction_id: str
-) -> bool:
-    """Atomically mark an order paid and grant its credits — exactly once.
-
-    Returns True if the order is (now or already) paid. All the money-safety
-    lives here: row-locked lookup, provider match, amount check, and an
-    idempotency guard so a provider retrying the same notification can never
-    double-credit an account.
-    """
-    with _db() as conn:
-        order = conn.execute(
-            "SELECT * FROM orders WHERE out_trade_no = %s FOR UPDATE", (out_trade_no,)
-        ).fetchone()
-        if order is None or order["provider"] != provider:
-            return False
-        if order["status"] == "paid":
-            return True
-        if paid_amount_fen and int(paid_amount_fen) != int(order["amount_fen"]):
-            conn.execute(
-                "UPDATE orders SET status = 'failed' WHERE id = %s", (order["id"],)
-            )
-            return False
-        conn.execute(
-            "UPDATE orders SET status = 'paid', transaction_id = %s, paid_at = %s"
-            " WHERE id = %s",
-            (transaction_id, int(time.time()), order["id"]),
-        )
-        _grant(
-            conn,
-            order["user_id"],
-            int(order["credits"]),
-            f"recharge:{provider}:{out_trade_no}",
-        )
-    return True
 
 
 # --------------------------------------------------------------------------
@@ -566,7 +441,7 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "torch-server", "inference_base": INFERENCE_BASE}
+    return {"status": "ok", "service": "torch-server"}
 
 
 # --------------------------------------------------------------------------
@@ -815,7 +690,9 @@ def admin_delete_skill(
 
 
 # --------------------------------------------------------------------------
-# Auth (email + password) — issues an inference key + signup credits
+# Auth (email + password) — issues an account token (used for /account/*).
+# Inference no longer runs through this server: the client uses the brand
+# `api_base_url` + the user's own API key(s). No credits, no metering.
 # --------------------------------------------------------------------------
 class RegisterRequest(BaseModel):
     email: str
@@ -849,11 +726,11 @@ def _ensure_key(conn, user_id: int) -> str:
 
 
 def _session_result(conn, user) -> dict:
+    # api_key here is the ACCOUNT token (Bearer for /account/*), not an
+    # inference key — inference uses the brand api_base_url + the user's key.
     api_key = _ensure_key(conn, user["id"])
     return {
         "api_key": api_key,
-        "base_url": INFERENCE_BASE,
-        "credits": user["balance"],
         "user": {"username": user["username"], "email": user["email"]},
     }
 
@@ -870,11 +747,10 @@ def auth_register(payload: RegisterRequest) -> dict:
         if conn.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone():
             raise HTTPException(status_code=409, detail="email already registered")
         user_id = conn.execute(
-            "INSERT INTO users(email, password_hash, username, balance, created_at)"
-            " VALUES (%s,%s,%s,0,%s) RETURNING id",
+            "INSERT INTO users(email, password_hash, username, created_at)"
+            " VALUES (%s,%s,%s,%s) RETURNING id",
             (email, _hash_password(payload.password), username, int(time.time())),
         ).fetchone()["id"]
-        _grant(conn, user_id, SIGNUP_CREDITS, "signup_grant")
         user = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
         return _session_result(conn, user)
 
@@ -896,16 +772,7 @@ def account_info(authorization: Optional[str] = Header(default=None)) -> dict:
         user = _user_by_key(conn, api_key)
         if user is None:
             raise HTTPException(status_code=401, detail="invalid api key")
-        ledger = conn.execute(
-            "SELECT delta, reason, created_at FROM credits_ledger"
-            " WHERE user_id = %s ORDER BY id DESC LIMIT 20",
-            (user["id"],),
-        ).fetchall()
-    return {
-        "user": {"username": user["username"], "email": user["email"]},
-        "credits": user["balance"],
-        "ledger": [dict(r) for r in ledger],
-    }
+    return {"user": {"username": user["username"], "email": user["email"]}}
 
 
 class PasswordChange(BaseModel):
@@ -958,91 +825,112 @@ def change_username(
 
 
 # --------------------------------------------------------------------------
-# WeChat scan-to-login (client-facing; server-mediated OAuth2 + polling)
+# WeChat 订阅号登录 (client-facing; 关注 + 发送 6 位验证码 + 消息 webhook 校验)
+# 未认证订阅号可用:接收消息 + 被动回复(明文模式),不需要 OAuth / 带参二维码。
 # --------------------------------------------------------------------------
 @app.get("/auth/wechat/config")
 def wechat_login_config_public() -> dict:
     with _db() as conn:
         cfg = _auth_all(conn)
-    return {"enabled": _wechat_login_enabled(cfg)}
+    return {
+        "enabled": _wechat_mp_enabled(cfg),
+        "qr_image": cfg.get("wechat_mp_qr") or "",
+    }
 
 
 @app.post("/auth/wechat/qr")
 def wechat_login_qr() -> dict:
     with _db() as conn:
         cfg = _auth_all(conn)
-        if not _wechat_login_enabled(cfg):
+        if not _wechat_mp_enabled(cfg):
             raise HTTPException(status_code=400, detail="微信登录未开通")
         state = secrets.token_urlsafe(24)
+        code = _wechat_mp_new_code(conn)
         conn.execute(
-            "INSERT INTO wechat_login_states(state, status, created_at)"
-            " VALUES (%s,'pending',%s)",
-            (state, int(time.time())),
+            "INSERT INTO wechat_login_states(state, status, created_at, code)"
+            " VALUES (%s,'pending',%s,%s)",
+            (state, int(time.time()), code),
         )
-    redirect = _wechat_redirect(cfg)
-    authorize_url = (
-        "https://open.weixin.qq.com/connect/qrconnect?"
-        f"appid={cfg['wechat_login_appid']}"
-        f"&redirect_uri={quote(redirect, safe='')}"
-        "&response_type=code&scope=snsapi_login"
-        f"&state={state}#wechat_redirect"
-    )
-    return {"state": state, "authorize_url": authorize_url}
+    return {
+        "state": state,
+        "code": code,
+        "qr_image": cfg.get("wechat_mp_qr") or "",
+        "expires_in": 600,
+    }
 
 
-@app.get("/auth/wechat/callback")
-def wechat_login_callback(
-    code: Optional[str] = None, state: Optional[str] = None
+@app.get("/wechat/mp/callback")
+def wechat_mp_verify(
+    signature: str = "", timestamp: str = "", nonce: str = "", echostr: str = ""
 ) -> Response:
-    if not code or not state:
-        return _wechat_html("登录失败：缺少必要参数。")
+    """微信服务器配置校验:签名通过后原样回显 echostr。"""
     with _db() as conn:
-        st = conn.execute(
-            "SELECT * FROM wechat_login_states WHERE state = %s", (state,)
-        ).fetchone()
-        if st is None:
-            return _wechat_html("登录失败：会话不存在或已过期。")
-        cfg = _auth_all(conn)
-    if not _wechat_login_enabled(cfg):
-        return _wechat_html("登录失败：微信登录未开通。")
-    appid = cfg["wechat_login_appid"]
-    secret = cfg["wechat_login_secret"]
+        token = _auth_all(conn).get("wechat_mp_token") or ""
+    if token and _wechat_mp_signature(token, timestamp, nonce) == signature:
+        return Response(content=echostr, media_type="text/plain")
+    return Response(content="", media_type="text/plain", status_code=403)
+
+
+@app.post("/wechat/mp/callback")
+async def wechat_mp_message(request: Request) -> Response:
+    """接收订阅号消息(明文模式):文本为 6 位验证码则完成登录并绑定 OpenID。"""
+    q = request.query_params
+    raw = await request.body()
+    with _db() as conn:
+        token = _auth_all(conn).get("wechat_mp_token") or ""
+    sig = _wechat_mp_signature(token, q.get("timestamp", ""), q.get("nonce", ""))
+    if not token or sig != q.get("signature", ""):
+        return Response(content="", media_type="text/plain", status_code=403)
     try:
-        with _client("https://api.weixin.qq.com") as client:
-            tok = client.get(
-                "https://api.weixin.qq.com/sns/oauth2/access_token",
-                params={
-                    "appid": appid,
-                    "secret": secret,
-                    "code": code,
-                    "grant_type": "authorization_code",
-                },
-            )
-            tok_data = json.loads(tok.text)
-            access_token = tok_data.get("access_token")
-            openid = tok_data.get("openid")
-            unionid = tok_data.get("unionid", "")
-            if not access_token or not openid:
-                return _wechat_html(
-                    f"登录失败：{tok_data.get('errmsg', '微信授权失败')}"
-                )
-            info = client.get(
-                "https://api.weixin.qq.com/sns/userinfo",
-                params={"access_token": access_token, "openid": openid},
-            )
-            info_data = json.loads(info.text)
-            nickname = info_data.get("nickname") or ""
+        root = ET.fromstring(raw.decode("utf-8"))
     except Exception:
-        return _wechat_html("登录失败：无法连接微信服务器，请稍后重试。")
-    with _db() as conn:
-        user = _wechat_get_or_create_user(conn, openid, unionid, nickname)
-        result = _session_result(conn, user)
-        conn.execute(
-            "UPDATE wechat_login_states SET status = 'done', result = %s"
-            " WHERE state = %s",
-            (json.dumps(result), state),
+        return Response(content="success", media_type="text/plain")
+
+    def _field(tag: str) -> str:
+        el = root.find(tag)
+        return (el.text or "").strip() if el is not None else ""
+
+    openid = _field("FromUserName")  # 发送者 = 用户 OpenID
+    mp_id = _field("ToUserName")  # 公众号原始 ID
+    msg_type = _field("MsgType")
+    content = _field("Content")
+    event = _field("Event").lower()
+
+    if not openid or not mp_id:
+        return Response(content="success", media_type="text/plain")
+
+    if msg_type == "event" and event == "subscribe":
+        return _wechat_mp_reply(
+            openid,
+            mp_id,
+            "感谢关注!请把登录页面上显示的 6 位验证码发给我,即可完成登录。",
         )
-    return _wechat_html("登录成功，请返回应用。")
+
+    if msg_type == "text" and content.isdigit() and len(content) == 6:
+        now = int(time.time())
+        with _db() as conn:
+            st = conn.execute(
+                "SELECT * FROM wechat_login_states"
+                " WHERE code = %s AND status = 'pending'"
+                " ORDER BY created_at DESC LIMIT 1",
+                (content,),
+            ).fetchone()
+            if st is None or now - int(st["created_at"]) > 600:
+                return _wechat_mp_reply(
+                    openid, mp_id, "验证码无效或已过期,请回到登录页重新获取。"
+                )
+            user = _wechat_get_or_create_user(conn, openid, "", "")
+            result = _session_result(conn, user)
+            conn.execute(
+                "UPDATE wechat_login_states SET status = 'done', result = %s"
+                " WHERE state = %s",
+                (json.dumps(result), st["state"]),
+            )
+        return _wechat_mp_reply(openid, mp_id, "登录成功,请返回应用。")
+
+    return _wechat_mp_reply(
+        openid, mp_id, "请把登录页面上显示的 6 位验证码发给我完成登录。"
+    )
 
 
 @app.get("/auth/wechat/poll/{state}")
@@ -1065,377 +953,6 @@ def wechat_login_poll(state: str) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Recharge / payments (client-facing; Bearer inference key)
-# --------------------------------------------------------------------------
-class OrderCreate(BaseModel):
-    package_id: int
-    provider: str  # "wechat" | "alipay"
-
-
-def _active_providers(cfg: dict) -> list[str]:
-    if cfg.get("enabled") != "1":
-        return []
-    out = []
-    if cfg.get("wechat_enabled") == "1":
-        out.append("wechat")
-    if cfg.get("alipay_enabled") == "1":
-        out.append("alipay")
-    return out
-
-
-@app.get("/billing/config")
-def billing_config(authorization: Optional[str] = Header(default=None)) -> dict:
-    """What the client needs to render the recharge dialog: providers + packages."""
-    api_key = _bearer(authorization)
-    with _db() as conn:
-        if _user_by_key(conn, api_key) is None:
-            raise HTTPException(status_code=401, detail="invalid api key")
-        cfg = _payment_all(conn)
-        pkgs = conn.execute(
-            "SELECT id, title, amount_fen, credits FROM recharge_packages"
-            " WHERE enabled = 1 ORDER BY sort_order, id"
-        ).fetchall()
-    providers = _active_providers(cfg)
-    packages = [dict(r) for r in pkgs]
-    return {
-        "enabled": bool(providers) and bool(packages),
-        "providers": providers,
-        "currency": cfg.get("currency", "CNY"),
-        "packages": packages,
-    }
-
-
-@app.post("/billing/order")
-def create_order(
-    payload: OrderCreate, authorization: Optional[str] = Header(default=None)
-) -> dict:
-    """Create a pending order, ask the provider to precreate it, return a QR."""
-    api_key = _bearer(authorization)
-    provider = (payload.provider or "").strip()
-    if provider not in {"wechat", "alipay"}:
-        raise HTTPException(status_code=400, detail="unknown provider")
-    with _db() as conn:
-        user = _user_by_key(conn, api_key)
-        if user is None:
-            raise HTTPException(status_code=401, detail="invalid api key")
-        cfg = _payment_all(conn)
-        if provider not in _active_providers(cfg):
-            raise HTTPException(status_code=400, detail="payment provider not enabled")
-        pkg = conn.execute(
-            "SELECT * FROM recharge_packages WHERE id = %s AND enabled = 1",
-            (payload.package_id,),
-        ).fetchone()
-        if pkg is None:
-            raise HTTPException(status_code=404, detail="package not found")
-        out_trade_no = "T" + str(int(time.time())) + secrets.token_hex(6)
-        conn.execute(
-            "INSERT INTO orders(out_trade_no, user_id, package_id, provider,"
-            " amount_fen, credits, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,'pending',%s)",
-            (out_trade_no, user["id"], pkg["id"], provider, pkg["amount_fen"],
-             pkg["credits"], int(time.time())),
-        )
-        amount_fen = int(pkg["amount_fen"])
-        credits = int(pkg["credits"])
-        title = pkg["title"]
-
-    # Network call to the provider stays OUT of the DB transaction above.
-    notify_base = (cfg.get("notify_base") or PUBLIC_BASE).rstrip("/")
-    try:
-        if provider == "wechat":
-            qr_content = payments.wechat_native_order(
-                cfg,
-                out_trade_no=out_trade_no,
-                amount_fen=amount_fen,
-                description=title,
-                notify_url=f"{notify_base}/billing/notify/wechat",
-                cert_dir=_WECHAT_CERT_DIR,
-            )
-        else:
-            qr_content = payments.alipay_precreate(
-                cfg,
-                out_trade_no=out_trade_no,
-                amount_fen=amount_fen,
-                subject=title,
-                notify_url=f"{notify_base}/billing/notify/alipay",
-            )
-    except Exception as exc:
-        with _db() as conn:
-            conn.execute(
-                "UPDATE orders SET status = 'failed' WHERE out_trade_no = %s",
-                (out_trade_no,),
-            )
-        raise HTTPException(status_code=502, detail=f"下单失败：{exc}") from exc
-
-    return {
-        "out_trade_no": out_trade_no,
-        "provider": provider,
-        "amount_fen": amount_fen,
-        "credits": credits,
-        "qr_code_url": qr_content,
-        "qr_image": payments.render_qr(qr_content),
-    }
-
-
-@app.get("/billing/order/{out_trade_no}")
-def order_status(
-    out_trade_no: str, authorization: Optional[str] = Header(default=None)
-) -> dict:
-    """Client polls this while the QR is on screen; flips to 'paid' post-webhook."""
-    api_key = _bearer(authorization)
-    with _db() as conn:
-        user = _user_by_key(conn, api_key)
-        if user is None:
-            raise HTTPException(status_code=401, detail="invalid api key")
-        order = conn.execute(
-            "SELECT * FROM orders WHERE out_trade_no = %s", (out_trade_no,)
-        ).fetchone()
-        if order is None or order["user_id"] != user["id"]:
-            raise HTTPException(status_code=404, detail="order not found")
-        balance = user["balance"]
-    return {"status": order["status"], "credits": int(order["credits"]), "balance": int(balance)}
-
-
-@app.get("/billing/orders")
-def my_orders(authorization: Optional[str] = Header(default=None)) -> dict:
-    """The signed-in user's own recharge orders (for the profile dialog)."""
-    api_key = _bearer(authorization)
-    with _db() as conn:
-        user = _user_by_key(conn, api_key)
-        if user is None:
-            raise HTTPException(status_code=401, detail="invalid api key")
-        rows = conn.execute(
-            "SELECT out_trade_no, provider, amount_fen, credits, status, created_at, paid_at"
-            " FROM orders WHERE user_id = %s ORDER BY id DESC LIMIT 50",
-            (user["id"],),
-        ).fetchall()
-    return {"data": [dict(r) for r in rows]}
-
-
-# --------------------------------------------------------------------------
-# Payment provider async notifications (verified by signature; no bearer auth)
-# --------------------------------------------------------------------------
-@app.post("/billing/notify/wechat")
-async def notify_wechat(request: Request):
-    with _db() as conn:
-        cfg = _payment_all(conn)
-    body = await request.body()
-    parsed = payments.wechat_parse_notify(
-        cfg, headers=dict(request.headers), body=body, cert_dir=_WECHAT_CERT_DIR
-    )
-    if parsed is None:
-        return JSONResponse(
-            status_code=400, content={"code": "FAIL", "message": "invalid signature"}
-        )
-    if parsed["success"]:
-        _credit_paid_order(
-            parsed["out_trade_no"], "wechat", parsed["amount_fen"], parsed["transaction_id"]
-        )
-    return {"code": "SUCCESS", "message": "成功"}
-
-
-@app.post("/billing/notify/alipay")
-async def notify_alipay(request: Request):
-    with _db() as conn:
-        cfg = _payment_all(conn)
-    # Alipay posts application/x-www-form-urlencoded — parse without needing the
-    # python-multipart dependency.
-    raw = (await request.body()).decode("utf-8", "replace")
-    form = dict(parse_qsl(raw))
-    parsed = payments.alipay_parse_notify(cfg, form=form)
-    if parsed is None:
-        return PlainTextResponse("failure")
-    if parsed["success"]:
-        _credit_paid_order(
-            parsed["out_trade_no"], "alipay", parsed["amount_fen"], parsed["transaction_id"]
-        )
-    return PlainTextResponse("success")
-
-
-# --------------------------------------------------------------------------
-# OpenAI-compatible metering proxy
-# --------------------------------------------------------------------------
-@app.get("/v1/models")
-def list_models(authorization: Optional[str] = Header(default=None)) -> dict:
-    api_key = _bearer(authorization)
-    with _db() as conn:
-        if _user_by_key(conn, api_key) is None:
-            raise HTTPException(status_code=401, detail="invalid api key")
-        rows = conn.execute(
-            "SELECT model FROM model_catalog WHERE enabled = 1 ORDER BY model"
-        ).fetchall()
-    return {
-        "object": "list",
-        "data": [
-            {"id": r["model"], "object": "model", "owned_by": "torch"} for r in rows
-        ],
-    }
-
-
-def _mock_reply_text(body: dict) -> str:
-    msgs = body.get("messages") or []
-    last = ""
-    for m in reversed(msgs):
-        if m.get("role") == "user":
-            last = m.get("content") or ""
-            break
-    return f"[torch-mock] 收到：{last}" if last else "[torch-mock] hello"
-
-
-def _mock_completion(model: str, body: dict) -> dict:
-    text = _mock_reply_text(body)
-    now = int(time.time())
-    return {
-        "id": f"chatcmpl-mock-{now}",
-        "object": "chat.completion",
-        "created": now,
-        "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "message": {"role": "assistant", "content": text},
-                "finish_reason": "stop",
-            }
-        ],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-    }
-
-
-def _sse(payload: dict) -> bytes:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
-
-
-def _mock_stream(model: str, body: dict):
-    """Emit the mock reply as OpenAI-style SSE chunks so the client streams."""
-    text = _mock_reply_text(body)
-    now = int(time.time())
-    cid = f"chatcmpl-mock-{now}"
-
-    def chunk(delta: dict, finish: Optional[str] = None) -> dict:
-        return {
-            "id": cid,
-            "object": "chat.completion.chunk",
-            "created": now,
-            "model": model,
-            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-        }
-
-    yield _sse(chunk({"role": "assistant"}))
-    for piece in text:
-        yield _sse(chunk({"content": piece}))
-    yield _sse(chunk({}, finish="stop"))
-    yield b"data: [DONE]\n\n"
-
-
-def _deduct(user_id: int, price: int, model: str) -> int:
-    """Atomic credit deduction; returns the new balance."""
-    with _db() as conn:
-        conn.execute(
-            "INSERT INTO credits_ledger(user_id, delta, reason, created_at)"
-            " VALUES (%s,%s,%s,%s)",
-            (user_id, -price, f"chat:{model}", int(time.time())),
-        )
-        return conn.execute(
-            "UPDATE users SET balance = balance - %s WHERE id = %s RETURNING balance",
-            (price, user_id),
-        ).fetchone()["balance"]
-
-
-@app.post("/v1/chat/completions")
-async def chat_completions(
-    request: Request, authorization: Optional[str] = Header(default=None)
-):
-    api_key = _bearer(authorization)
-    body = await request.json()
-    model = body.get("model") or ""
-    stream = bool(body.get("stream"))
-
-    with _db() as conn:
-        user = _user_by_key(conn, api_key)
-        if user is None:
-            raise HTTPException(status_code=401, detail="invalid api key")
-        row = conn.execute(
-            "SELECT * FROM model_catalog WHERE model = %s AND enabled = 1", (model,)
-        ).fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail=f"model not available: {model}")
-        price = int(row["price"])
-        if user["balance"] < price:
-            raise HTTPException(status_code=402, detail="insufficient credits")
-        user_id = user["id"]
-        upstream_base = row["upstream_base_url"]
-        upstream_model = row["upstream_model"] or model
-        upstream_key = row["upstream_api_key"] or ""
-
-    # ---- Built-in mock backend (upstream_base == "mock") ----
-    if upstream_base == "mock":
-        if stream:
-
-            def mock_gen():
-                yield from _mock_stream(model, body)
-                _deduct(user_id, price, model)
-
-            return StreamingResponse(mock_gen(), media_type="text/event-stream")
-        result = _mock_completion(model, body)
-        result["torch_credits_remaining"] = _deduct(user_id, price, model)
-        return result
-
-    # ---- Real upstream: transparent OpenAI-compatible pass-through ----
-    # Forward the request verbatim (messages, tools, temperature, reasoning,
-    # etc.), only swapping the exposed model name for the upstream one, so the
-    # Hermes agent's normal model-call structure works unchanged — including
-    # server-sent-event streaming.
-    fwd = dict(body)
-    fwd["model"] = upstream_model
-    headers = {"Content-Type": "application/json"}
-    if upstream_key:
-        headers["Authorization"] = f"Bearer {upstream_key}"
-    url = f"{upstream_base.rstrip('/')}/chat/completions"
-
-    if stream:
-        fwd["stream"] = True
-
-        def upstream_gen():
-            try:
-                with _client(upstream_base, timeout=300) as client:
-                    with client.stream("POST", url, json=fwd, headers=headers) as resp:
-                        if resp.status_code >= 400:
-                            detail = resp.read().decode("utf-8", "replace")
-                            yield _sse(
-                                {"error": {"code": resp.status_code, "message": detail[:1000]}}
-                            )
-                            yield b"data: [DONE]\n\n"
-                            return
-                        for chunk in resp.iter_raw():
-                            if chunk:
-                                yield chunk
-            except Exception as exc:
-                yield _sse({"error": {"message": f"upstream error: {exc}"}})
-                yield b"data: [DONE]\n\n"
-                return
-            _deduct(user_id, price, model)
-
-        return StreamingResponse(upstream_gen(), media_type="text/event-stream")
-
-    fwd["stream"] = False
-    try:
-        with _client(upstream_base, timeout=120) as client:
-            resp = client.post(url, json=fwd, headers=headers)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"upstream error: {exc}") from exc
-    if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    try:
-        result = resp.json()
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"invalid upstream response ({resp.status_code}): {resp.text[:500]}",
-        ) from exc
-    result["torch_credits_remaining"] = _deduct(user_id, price, model)
-    return result
-
-
-# --------------------------------------------------------------------------
 # Admin (X-Admin-Token)
 # --------------------------------------------------------------------------
 class ModelUpsert(BaseModel):
@@ -1445,11 +962,6 @@ class ModelUpsert(BaseModel):
     upstream_api_key: Optional[str] = None
     price: int = 1
     enabled: bool = True
-
-
-class CreditAdjust(BaseModel):
-    delta: int
-    reason: str = "admin_adjust"
 
 
 @app.get("/admin/models")
@@ -1507,68 +1019,9 @@ def admin_list_users(x_admin_token: Optional[str] = Header(default=None)) -> dic
     _require_admin(x_admin_token)
     with _db() as conn:
         rows = conn.execute(
-            "SELECT id, username, email, balance, created_at FROM users ORDER BY id"
+            "SELECT id, username, email, created_at FROM users ORDER BY id"
         ).fetchall()
     return {"data": [dict(r) for r in rows]}
-
-
-@app.post("/admin/users/{user_id}/credits")
-def admin_adjust_credits(
-    user_id: int,
-    payload: CreditAdjust,
-    x_admin_token: Optional[str] = Header(default=None),
-) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        user = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,)).fetchone()
-        if user is None:
-            raise HTTPException(status_code=404, detail="user not found")
-        _grant(conn, user_id, int(payload.delta), payload.reason)
-        balance = conn.execute(
-            "SELECT balance FROM users WHERE id = %s", (user_id,)
-        ).fetchone()["balance"]
-    return {"status": "ok", "balance": balance}
-
-
-# --------------------------------------------------------------------------
-# Admin — payment config, recharge packages, orders
-# --------------------------------------------------------------------------
-class PackageUpsert(BaseModel):
-    id: Optional[int] = None
-    title: str
-    amount_fen: int
-    credits: int
-    sort_order: int = 0
-    enabled: int = 1
-
-
-@app.get("/admin/payment")
-def admin_get_payment(x_admin_token: Optional[str] = Header(default=None)) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        return _mask_payment(_payment_all(conn))
-
-
-@app.post("/admin/payment")
-def admin_set_payment(
-    payload: dict, x_admin_token: Optional[str] = Header(default=None)
-) -> dict:
-    _require_admin(x_admin_token)
-    unknown = set(payload) - _PAYMENT_KEYS
-    if unknown:
-        raise HTTPException(status_code=400, detail=f"unknown keys: {sorted(unknown)}")
-    with _db() as conn:
-        for k, v in payload.items():
-            v = str(v)
-            # Blank / masked secret means "leave the stored value untouched".
-            if k in _PAYMENT_SECRET_KEYS and v in {"", "***"}:
-                continue
-            conn.execute(
-                "INSERT INTO payment_config(key, value) VALUES (%s,%s)"
-                " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-                (k, v),
-            )
-        return _mask_payment(_payment_all(conn))
 
 
 @app.get("/admin/wechat")
@@ -1598,63 +1051,6 @@ def admin_set_wechat(
                 (k, v),
             )
         return _mask_auth(_auth_all(conn))
-
-
-@app.get("/admin/packages")
-def admin_list_packages(x_admin_token: Optional[str] = Header(default=None)) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        rows = conn.execute(
-            "SELECT id, title, amount_fen, credits, sort_order, enabled"
-            " FROM recharge_packages ORDER BY sort_order, id"
-        ).fetchall()
-    return {"data": [dict(r) for r in rows]}
-
-
-@app.post("/admin/packages")
-def admin_upsert_package(
-    payload: PackageUpsert, x_admin_token: Optional[str] = Header(default=None)
-) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        if payload.id is None:
-            conn.execute(
-                "INSERT INTO recharge_packages(title, amount_fen, credits, sort_order,"
-                " enabled, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
-                (payload.title, int(payload.amount_fen), int(payload.credits),
-                 payload.sort_order, payload.enabled, int(time.time())),
-            )
-        else:
-            conn.execute(
-                "UPDATE recharge_packages SET title=%s, amount_fen=%s, credits=%s,"
-                " sort_order=%s, enabled=%s WHERE id=%s",
-                (payload.title, int(payload.amount_fen), int(payload.credits),
-                 payload.sort_order, payload.enabled, payload.id),
-            )
-    return {"ok": True}
-
-
-@app.delete("/admin/packages/{pid}")
-def admin_delete_package(
-    pid: int, x_admin_token: Optional[str] = Header(default=None)
-) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        conn.execute("DELETE FROM recharge_packages WHERE id = %s", (pid,))
-    return {"ok": True}
-
-
-@app.get("/admin/orders")
-def admin_list_orders(x_admin_token: Optional[str] = Header(default=None)) -> dict:
-    _require_admin(x_admin_token)
-    with _db() as conn:
-        rows = conn.execute(
-            "SELECT o.id, o.out_trade_no, o.user_id, u.email, o.provider, o.amount_fen,"
-            " o.credits, o.status, o.transaction_id, o.created_at, o.paid_at"
-            " FROM orders o JOIN users u ON u.id = o.user_id"
-            " ORDER BY o.id DESC LIMIT 100"
-        ).fetchall()
-    return {"data": [dict(r) for r in rows]}
 
 
 # --------------------------------------------------------------------------

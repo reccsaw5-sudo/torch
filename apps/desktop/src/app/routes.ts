@@ -5,7 +5,6 @@ export const COMMAND_CENTER_ROUTE = '/command-center'
 export const SKILLS_ROUTE = '/skills'
 export const MEMORY_ROUTE = '/memory'
 export const CLI_ROUTE = '/cli'
-export const BILLING_ROUTE = '/billing'
 export const MESSAGING_ROUTE = '/messaging'
 export const ARTIFACTS_ROUTE = '/artifacts'
 export const CRON_ROUTE = '/cron'
@@ -16,7 +15,6 @@ export const STARMAP_ROUTE = '/starmap'
 export type AppView =
   | 'agents'
   | 'artifacts'
-  | 'billing'
   | 'chat'
   | 'cli'
   | 'command-center'
@@ -31,7 +29,6 @@ export type AppView =
 export type AppRouteId =
   | 'agents'
   | 'artifacts'
-  | 'billing'
   | 'cli'
   | 'command-center'
   | 'cron'
@@ -56,7 +53,6 @@ export const APP_ROUTES = [
   { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
   { id: 'memory', path: MEMORY_ROUTE, view: 'memory' },
   { id: 'cli', path: CLI_ROUTE, view: 'cli' },
-  { id: 'billing', path: BILLING_ROUTE, view: 'billing' },
   { id: 'messaging', path: MESSAGING_ROUTE, view: 'messaging' },
   { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },

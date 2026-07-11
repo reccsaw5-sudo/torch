@@ -10,7 +10,6 @@ import { api, clearToken, getToken, setToken } from '@/lib/api'
 import Brand from '@/pages/Brand'
 import ClientBuild from '@/pages/ClientBuild'
 import Models from '@/pages/Models'
-import Payments from '@/pages/Payments'
 import Skills from '@/pages/Skills'
 import Suggestions from '@/pages/Suggestions'
 import Users from '@/pages/Users'
@@ -90,7 +89,7 @@ export default function App() {
       <header className="mb-6 flex items-center justify-between border-b pb-4">
         <div>
           <h1 className="text-xl font-bold">Torch 管理后台</h1>
-          <p className="text-sm text-muted-foreground">模型 · 用户积分 · 支付充值 · 首页卡片 · 技能市场 · 品牌配置 · 客户端构建</p>
+          <p className="text-sm text-muted-foreground">模型 · 用户 · 微信登录 · 首页卡片 · 技能市场 · 品牌配置 · 客户端构建</p>
         </div>
         <Button variant="outline" size="sm" onClick={logout}>
           <LogOut className="h-4 w-4" /> 退出
@@ -100,8 +99,7 @@ export default function App() {
       <Tabs defaultValue="models">
         <TabsList>
           <TabsTrigger value="models">模型</TabsTrigger>
-          <TabsTrigger value="users">用户/积分</TabsTrigger>
-          <TabsTrigger value="payments">支付充值</TabsTrigger>
+          <TabsTrigger value="users">用户</TabsTrigger>
           <TabsTrigger value="wechat">微信登录</TabsTrigger>
           <TabsTrigger value="suggestions">首页卡片</TabsTrigger>
           <TabsTrigger value="skills">技能市场</TabsTrigger>
@@ -113,9 +111,6 @@ export default function App() {
         </TabsContent>
         <TabsContent value="users">
           <Users />
-        </TabsContent>
-        <TabsContent value="payments">
-          <Payments />
         </TabsContent>
         <TabsContent value="wechat">
           <WechatLogin />

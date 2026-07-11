@@ -2,11 +2,13 @@ import { atom } from 'nanostores'
 
 import { setModelAssignment } from '@/hermes'
 
-import { $torchLogin } from './torch-login'
+import { getActiveTorchKey } from './torch-api-keys'
+import { $torchBrand, loadTorchBrand } from './torch-brand'
 
-// Torch-native model catalog: the branded client only ever offers the models
-// the admin console publishes via the metering proxy (`GET /v1/models`). No
-// upstream Hermes provider universe is surfaced.
+// Torch model catalog: the branded client points Hermes' main model at the
+// admin-configured built-in inference endpoint (brand.api_base_url, an
+// OpenAI-compatible base). The catalog is fetched from `${base}/models` using
+// the user's own API key — no upstream Hermes provider universe is surfaced.
 const SELECTED_KEY = 'torch_selected_model'
 
 export const $torchModels = atom<string[]>([])
@@ -28,18 +30,22 @@ function writeSelectedTorchModel(model: string) {
   }
 }
 
-// Fetch the enabled model catalog from the metering proxy using the logged-in
-// session's key. Safe to call repeatedly (e.g. every dropdown open).
+// Fetch the model catalog from the built-in endpoint using the active user key.
+// Safe to call repeatedly (e.g. every dropdown open).
 export async function loadTorchModels(): Promise<string[]> {
-  const session = $torchLogin.get().session
-  if (!session) {
+  await loadTorchBrand()
+  const base = $torchBrand.get().apiBaseUrl
+  const key = getActiveTorchKey()
+
+  if (!base || !key) {
     $torchModels.set([])
     $torchModelsLoaded.set(true)
     return []
   }
+
   try {
-    const res = await fetch(`${session.baseUrl}/models`, {
-      headers: { Authorization: `Bearer ${session.apiKey}` }
+    const res = await fetch(`${base}/models`, {
+      headers: { Authorization: `Bearer ${key}` }
     })
     const data = (await res.json()) as { data?: { id: string }[] }
     const ids = (data.data ?? []).map(m => m.id).filter(Boolean)
@@ -52,20 +58,23 @@ export async function loadTorchModels(): Promise<string[]> {
   }
 }
 
-// Persist a model as the profile default, routed through the metering proxy
-// (provider=custom + proxy base_url/key). Mirrors the login-time assignment so
-// the choice survives restarts and applies to new conversations.
+// Persist a model as the profile default, routed through the built-in endpoint
+// (provider=custom + brand base_url + active user key). Mirrors the login-time
+// assignment so the choice survives restarts and applies to new conversations.
 export async function applyTorchModel(model: string) {
-  const session = $torchLogin.get().session
-  if (!session) {
+  const base = $torchBrand.get().apiBaseUrl
+  const key = getActiveTorchKey()
+
+  if (!base || !key) {
     return
   }
+
   await setModelAssignment({
     scope: 'main',
     provider: 'custom',
     model,
-    base_url: session.baseUrl,
-    api_key: session.apiKey
+    base_url: base,
+    api_key: key
   })
   writeSelectedTorchModel(model)
 }

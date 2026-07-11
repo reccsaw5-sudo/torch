@@ -1,14 +1,16 @@
 import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 
+import { getActiveTorchKey } from '@/store/torch-api-keys'
+import { $torchBrand, loadTorchBrand } from '@/store/torch-brand'
 import { $torchLogin } from '@/store/torch-login'
 import { $torchModels, loadTorchModels, readSelectedTorchModel } from '@/store/torch-models'
 
 // Torch-native on-demand translation for backend catalog text (skill/toolset/
 // MCP/hub names + descriptions) that ships in English. The user flips a toggle;
-// visible English strings are sent to the metering proxy's chat endpoint, and
-// the Simplified-Chinese result is cached in localStorage so each unique string
-// is only ever translated once per machine.
+// visible English strings are sent to the built-in inference endpoint's chat
+// endpoint (with the user's own key), and the Simplified-Chinese result is
+// cached in localStorage so each unique string is only translated once.
 
 const CACHE_KEY = 'torch_translations_v1'
 const ON_KEY = 'torch_translate_on'
@@ -99,11 +101,19 @@ function parseTranslations(content: string): string[] | null {
   }
 }
 
-/** Translate a batch of English strings to Simplified Chinese via the metering
- *  proxy, skipping anything already cached. No-ops when logged out. */
+/** Translate a batch of English strings to Simplified Chinese via the built-in
+ *  inference endpoint, skipping anything already cached. No-ops when logged out
+ *  or when no API key/base is configured yet. */
 export async function translateStrings(texts: (string | null | undefined)[]): Promise<void> {
   const session = $torchLogin.get().session
   if (!session) {
+    return
+  }
+
+  await loadTorchBrand()
+  const base = $torchBrand.get().apiBaseUrl
+  const key = getActiveTorchKey()
+  if (!base || !key) {
     return
   }
 
@@ -138,11 +148,11 @@ export async function translateStrings(texts: (string | null | undefined)[]): Pr
   try {
     for (const batch of chunk(pending, CHUNK_SIZE)) {
       try {
-        const res = await fetch(`${session.baseUrl}/chat/completions`, {
+        const res = await fetch(`${base}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.apiKey}`
+            Authorization: `Bearer ${key}`
           },
           body: JSON.stringify({
             model,

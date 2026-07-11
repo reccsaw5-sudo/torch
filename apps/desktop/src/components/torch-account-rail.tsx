@@ -1,29 +1,17 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 
-import { BILLING_ROUTE } from '@/app/routes'
 import { Button } from '@/components/ui/button'
-import { LogOut, Plus, Zap } from '@/lib/icons'
-import { $torchLogin, logoutTorch, refreshTorchCredits } from '@/store/torch-login'
+import { LogOut } from '@/lib/icons'
+import { $torchLogin, logoutTorch } from '@/store/torch-login'
 
 import { TorchProfileDialog } from './torch-profile-dialog'
 
-// Sidebar footer account block: who's logged in, their credit balance, a
-// recharge entry, and logout. Renders nothing when logged out (the login gate
-// owns that state).
+// Sidebar footer account block: who's logged in and logout. Renders nothing
+// when logged out (the login gate owns that state).
 export function TorchAccountRail() {
   const { session } = useStore($torchLogin)
-  const navigate = useNavigate()
   const [profileOpen, setProfileOpen] = useState(false)
-
-  // Pull fresh credits/username when the rail mounts for a session.
-  useEffect(() => {
-    if (session) {
-      void refreshTorchCredits()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.apiKey])
 
   if (!session) {
     return null
@@ -52,14 +40,11 @@ export function TorchAccountRail() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[0.8125rem] font-medium leading-tight text-(--ui-text-primary)">{label}</div>
-            <div className="flex items-center gap-1 text-[0.6875rem] leading-tight text-muted-foreground">
-              <Zap className="size-3 text-primary" /> 积分 {session.credits}
-            </div>
+            {session.email && (
+              <div className="truncate text-[0.6875rem] leading-tight text-muted-foreground">{session.email}</div>
+            )}
           </div>
         </button>
-        <Button onClick={() => navigate(BILLING_ROUTE)} size="xs">
-          <Plus /> 充值
-        </Button>
         <Button aria-label="退出登录" onClick={onLogout} size="icon-xs" title="退出登录" variant="ghost">
           <LogOut />
         </Button>

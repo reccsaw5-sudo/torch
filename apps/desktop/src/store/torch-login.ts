@@ -2,27 +2,25 @@ import { atom } from 'nanostores'
 
 import { setModelAssignment } from '@/hermes'
 
-// The brand server (business backend + metering proxy). Baked into the branded
-// client; override at build time with VITE_TORCH_SERVER.
+import { getActiveTorchKey } from './torch-api-keys'
+import { $torchBrand, loadTorchBrand } from './torch-brand'
+
+// The brand account server (business backend: login + account management).
+// Baked into the branded client; override at build time with VITE_TORCH_SERVER.
 const ENV = import.meta.env as Record<string, string | undefined>
 const SERVER = (ENV.VITE_TORCH_SERVER ?? 'http://127.0.0.1:8080').replace(/\/$/, '')
 const SESSION_KEY = 'torch_client_session'
 
-/** Brand-server root (business API), i.e. the inference base without `/v1`. */
+/** Brand account server root (login + account management API). */
 export function torchServerBase(): string {
-  const session = $torchLogin.get().session
-
-  if (session?.baseUrl) {
-    return session.baseUrl.replace(/\/v1\/?$/, '')
-  }
-
   return SERVER
 }
 
 export interface TorchSession {
+  // Account token from /auth/*, used only for /account/* management calls.
+  // Inference no longer flows through the brand server — it goes straight to
+  // the built-in endpoint (brand.api_base_url) with the user's own key.
   apiKey: string
-  baseUrl: string
-  credits: number
   username: string
   email: string
 }
@@ -69,8 +67,6 @@ const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export interface AuthResult {
   api_key: string
-  base_url: string
-  credits: number
   user?: { username?: string; email?: string }
 }
 
@@ -99,43 +95,56 @@ async function resolveModel(baseUrl: string, apiKey: string): Promise<string> {
       return ids[0]
     }
   } catch {
-    // Keep the default model if the catalog can't be read.
+    // Keep the saved model if the catalog can't be read.
   }
 
-  return 'torch-mock'
+  return saved
 }
 
-// Point Hermes' main model at the metering proxy (provider=custom, same wiring
-// as the local-endpoint path). Re-applied on every startup so the branded
-// client survives any Hermes-side config reset.
-async function applyModel(baseUrl: string, apiKey: string) {
-  const model = await resolveModel(baseUrl, apiKey)
-  await setModelAssignment({ scope: 'main', provider: 'custom', model, base_url: baseUrl, api_key: apiKey })
+// Point Hermes' main model at the built-in endpoint (provider=custom, brand
+// base_url + the user's active key). Re-applied on every startup so the branded
+// client survives any Hermes-side config reset. No-op until the brand's
+// api_base_url is loaded AND the user has added at least one key.
+export async function reapplyTorchModel() {
+  await loadTorchBrand()
+  const base = $torchBrand.get().apiBaseUrl
+  const key = getActiveTorchKey()
+
+  if (!base || !key) {
+    return
+  }
+
+  const model = await resolveModel(base, key)
+
+  if (!model) {
+    return
+  }
+
+  await setModelAssignment({ scope: 'main', provider: 'custom', model, base_url: base, api_key: key })
 }
 
 async function configure(result: AuthResult, onDone?: () => void) {
   patch({ status: 'configuring' })
-  const baseUrl = result.base_url ?? ''
-  const apiKey = result.api_key ?? ''
-
-  await applyModel(baseUrl, apiKey)
 
   const session: TorchSession = {
-    apiKey,
-    baseUrl,
-    credits: result.credits ?? 0,
+    apiKey: result.api_key ?? '',
     username: result.user?.username ?? '',
     email: result.user?.email ?? ''
   }
 
   writeSession(session)
+
+  // Best-effort: wire the model if a key is already configured. New users add
+  // their key in Settings, which re-applies then.
+  await reapplyTorchModel().catch(() => {})
+
   patch({ session, status: 'idle', error: null })
   onDone?.()
 }
 
 // On startup: validate the stored session against the server. An invalid key
 // (e.g. the account was removed) clears the session so the login gate shows;
-// a valid key refreshes credits and re-points the model at the proxy.
+// a valid session refreshes the username/email and re-applies the model.
 export async function restoreTorchSession(onDone?: () => void) {
   const session = $torchLogin.get().session
 
@@ -153,11 +162,10 @@ export async function restoreTorchSession(onDone?: () => void) {
     }
 
     if (res.ok) {
-      const data = (await res.json()) as { credits?: number; user?: { username?: string; email?: string } }
+      const data = (await res.json()) as { user?: { username?: string; email?: string } }
 
       const updated: TorchSession = {
         ...session,
-        credits: data.credits ?? session.credits,
         username: data.user?.username ?? session.username,
         email: data.user?.email ?? session.email
       }
@@ -170,7 +178,7 @@ export async function restoreTorchSession(onDone?: () => void) {
   }
 
   try {
-    await applyModel(session.baseUrl, session.apiKey)
+    await reapplyTorchModel()
     onDone?.()
   } catch {
     // Gateway not ready yet — a later restore attempt will re-apply.
@@ -214,16 +222,17 @@ export function logoutTorch() {
   patch({ session: null, status: 'idle', error: null })
 }
 
-// --- WeChat scan-to-login (微信扫码登录) -----------------------------------
-// The QR flow is server-mediated: the client asks for a login session (state +
-// authorize URL / QR), shows the QR, then polls until the server-side OAuth2
-// callback resolves the scan into a Torch session. All endpoints degrade
-// gracefully (enabled:false / thrown error) until the brand server has WeChat
-// Open-Platform credentials configured.
+// --- WeChat 订阅号登录 (关注 + 发送 6 位验证码) ------------------------------
+// The flow is server-mediated: the client asks for a login session (state +
+// 6-digit code + the account's follow-QR), shows both, then polls until the
+// user follows the account and sends the code to it — the server's message
+// webhook resolves that into a Torch session. All endpoints degrade gracefully
+// (enabled:false / thrown error) until the brand server has the 订阅号
+// configured.
 
 export interface WechatLoginSession {
   state: string
-  authorize_url?: string
+  code?: string
   qr_image?: string
 }
 
@@ -276,50 +285,8 @@ export async function completeWechatLogin(result: AuthResult, onDone?: () => voi
   await configure(result, onDone)
 }
 
-// Lightweight credits/username refresh (no model re-apply) — used by the
-// account rail on mount and right after a successful top-up.
-export async function refreshTorchCredits() {
-  const session = $torchLogin.get().session
-
-  if (!session) {
-    return
-  }
-
-  try {
-    const res = await fetch(`${SERVER}/account/info`, {
-      headers: { Authorization: `Bearer ${session.apiKey}` }
-    })
-
-    if (!res.ok) {
-      return
-    }
-
-    const data = (await res.json()) as { credits?: number; user?: { username?: string; email?: string } }
-
-    const updated: TorchSession = {
-      ...session,
-      credits: data.credits ?? session.credits,
-      username: data.user?.username ?? session.username,
-      email: data.user?.email ?? session.email
-    }
-
-    writeSession(updated)
-    patch({ session: updated })
-  } catch {
-    // Server unreachable — keep the cached values.
-  }
-}
-
-export interface LedgerEntry {
-  delta: number
-  reason: string
-  created_at: number
-}
-
 export interface AccountInfo {
   user: { username: string; email: string }
-  credits: number
-  ledger: LedgerEntry[]
 }
 
 async function accountError(res: Response): Promise<string> {

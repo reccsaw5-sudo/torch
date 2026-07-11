@@ -7,6 +7,9 @@ export interface TorchBrand {
   displayName: string
   iconUrl: string
   primaryColor: string
+  /** Built-in inference base URL (OpenAI-compatible). Admin-configured, locked
+   *  read-only in the client — the user only supplies their own API key(s). */
+  apiBaseUrl: string
   loaded: boolean
 }
 
@@ -14,6 +17,7 @@ export const $torchBrand = atom<TorchBrand>({
   displayName: 'Torch',
   iconUrl: '',
   primaryColor: '#2563eb',
+  apiBaseUrl: '',
   loaded: false
 })
 
@@ -32,6 +36,7 @@ export async function loadTorchBrand() {
       displayName: b.app_display_name || b.app_name || 'Torch',
       iconUrl: b.app_icon_url || '',
       primaryColor: b.primary_color || '#2563eb',
+      apiBaseUrl: (b.api_base_url || '').replace(/\/$/, ''),
       loaded: true
     })
   } catch {

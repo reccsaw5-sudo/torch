@@ -327,20 +327,41 @@ function WechatPanel({
 
   return (
     <div className="flex flex-col items-center gap-3 py-2">
-      <div className="grid size-48 place-items-center rounded-2xl border border-neutral-200 bg-white p-2">
+      <div className="grid size-44 place-items-center rounded-2xl border border-neutral-200 bg-white p-2">
         {phase === 'loading' || !ses ? (
           <Loader2 className="size-6 animate-spin text-neutral-400" />
         ) : ses.qr_image ? (
-          <img alt="微信登录二维码" className="size-full object-contain" src={ses.qr_image} />
-        ) : ses.authorize_url ? (
-          <iframe className="size-full border-0" src={ses.authorize_url} title="微信登录二维码" />
+          <img alt="订阅号二维码" className="size-full object-contain" src={ses.qr_image} />
         ) : (
-          <Loader2 className="size-6 animate-spin text-neutral-400" />
+          <MessageCircle className="size-10 text-neutral-300" />
         )}
       </div>
-      <div className="flex items-center gap-1.5 text-sm text-neutral-600">
+
+      {ses?.code && (
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-xs text-neutral-500">验证码</span>
+          <span className="font-mono text-2xl font-bold tracking-[0.35em] text-neutral-900">{ses.code}</span>
+        </div>
+      )}
+
+      <ol className="w-full max-w-[16rem] space-y-1 text-[0.8125rem] text-neutral-600">
+        <li className="flex gap-1.5">
+          <span className="font-semibold" style={{ color: accent }}>
+            ①
+          </span>
+          微信「扫一扫」扫码关注公众号
+        </li>
+        <li className="flex gap-1.5">
+          <span className="font-semibold" style={{ color: accent }}>
+            ②
+          </span>
+          把上面的验证码发给公众号即可登录
+        </li>
+      </ol>
+
+      <div className="flex items-center gap-1.5 text-xs text-neutral-500">
         <span className="inline-block size-1.5 animate-pulse rounded-full" style={{ background: accent }} />
-        打开微信「扫一扫」，扫码登录
+        等待验证中…
       </div>
     </div>
   )

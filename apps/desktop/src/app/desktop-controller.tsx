@@ -133,7 +133,6 @@ import { UpdatesOverlay } from './updates-overlay'
 
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
 const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
-const BillingView = lazy(async () => ({ default: (await import('./billing')).BillingView }))
 const CliView = lazy(async () => ({ default: (await import('./cli')).CliView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
@@ -1358,14 +1357,6 @@ export function DesktopController() {
               </Suspense>
             }
             path="cli"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <BillingView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
-            }
-            path="billing"
           />
           <Route
             element={

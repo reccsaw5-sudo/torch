@@ -1,4 +1,4 @@
-# Torch backend (business server + metering proxy + payments + wechat login).
+# Torch backend (business server: login + brand + admin console).
 # Build context = torch-server/. Runs the FastAPI app on 0.0.0.0:8080.
 FROM python:3.13-slim
 
@@ -9,9 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# curl is only used by the container healthcheck. psycopg[binary] and the
-# crypto deps (cryptography / pycryptodome) ship manylinux wheels, so no
-# compiler toolchain is needed on slim for x86_64/arm64.
+# curl is only used by the container healthcheck. psycopg[binary] ships
+# manylinux wheels, so no compiler toolchain is needed on slim.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
@@ -19,7 +18,7 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py payments.py ./
+COPY app.py ./
 RUN mkdir -p /app/data
 
 EXPOSE 8080

@@ -68,7 +68,6 @@ export interface UserRow {
   id: number
   username: string
   email: string
-  balance: number
   created_at: number
 }
 
@@ -121,38 +120,6 @@ export interface SkillUpsert {
   enabled: number
 }
 
-export interface PackageRow {
-  id: number
-  title: string
-  amount_fen: number
-  credits: number
-  sort_order: number
-  enabled: number
-}
-
-export interface PackageUpsert {
-  id?: number
-  title: string
-  amount_fen: number
-  credits: number
-  sort_order: number
-  enabled: number
-}
-
-export interface OrderRow {
-  id: number
-  out_trade_no: string
-  user_id: number
-  email: string
-  provider: string
-  amount_fen: number
-  credits: number
-  status: string
-  transaction_id: string
-  created_at: number
-  paid_at: number | null
-}
-
 export interface BuildRun {
   id: number
   status: string
@@ -177,8 +144,6 @@ export const api = {
   deleteModel: (id: number) => req<{ status: string }>('DELETE', `/admin/models/${id}`),
 
   listUsers: () => req<{ data: UserRow[] }>('GET', '/admin/users'),
-  adjustCredits: (userId: number, delta: number, reason: string) =>
-    req<{ status: string; balance: number }>('POST', `/admin/users/${userId}/credits`, { delta, reason }),
 
   getBrand: () => req<Record<string, string>>('GET', '/admin/brand'),
   setBrand: (patch: Record<string, string>) => req<Record<string, string>>('POST', '/admin/brand', patch),
@@ -193,17 +158,8 @@ export const api = {
   upsertSkill: (s: SkillUpsert) => req<{ ok: boolean }>('POST', '/admin/skills', s),
   deleteSkill: (id: number) => req<{ ok: boolean }>('DELETE', `/admin/skills/${id}`),
 
-  getPayment: () => req<Record<string, string>>('GET', '/admin/payment'),
-  setPayment: (patch: Record<string, string>) => req<Record<string, string>>('POST', '/admin/payment', patch),
-
   getWechat: () => req<Record<string, string>>('GET', '/admin/wechat'),
   setWechat: (patch: Record<string, string>) => req<Record<string, string>>('POST', '/admin/wechat', patch),
-
-  listPackages: () => req<{ data: PackageRow[] }>('GET', '/admin/packages'),
-  upsertPackage: (p: PackageUpsert) => req<{ ok: boolean }>('POST', '/admin/packages', p),
-  deletePackage: (id: number) => req<{ ok: boolean }>('DELETE', `/admin/packages/${id}`),
-
-  listOrders: () => req<{ data: OrderRow[] }>('GET', '/admin/orders'),
 
   getBuildConfig: () => req<Record<string, string>>('GET', '/admin/build/config'),
   setBuildConfig: (patch: Record<string, string>) =>

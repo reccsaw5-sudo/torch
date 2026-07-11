@@ -2,12 +2,21 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getAuxiliaryModels, saveHermesConfig, setModelAssignment } from '@/hermes'
 import type { AuxiliaryModelsResponse } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { Cpu, RefreshCw } from '@/lib/icons'
+import { Check, Cpu, KeyRound, Plus, RefreshCw, Trash2 } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
+import {
+  $torchApiKeys,
+  addTorchKey,
+  removeTorchKey,
+  setActiveTorchKey
+} from '@/store/torch-api-keys'
+import { $torchBrand } from '@/store/torch-brand'
+import { reapplyTorchModel } from '@/store/torch-login'
 import {
   $torchModels,
   $torchModelsLoaded,
@@ -46,6 +55,9 @@ const AUX_TASKS: readonly { key: string; label: string; hint: string }[] = [
 const withActive = (models: readonly string[], active: string): readonly string[] =>
   active && !models.includes(active) ? [active, ...models] : models
 
+// Show only the tail of a key so the list is scannable without leaking it.
+const maskKey = (key: string): string => (key.length <= 8 ? key : `••••${key.slice(-4)}`)
+
 interface TorchModelSettingsProps {
   /** Notified after the main model is applied, so live UI stores can sync. */
   onMainModelChanged?: (provider: string, model: string) => void
@@ -61,11 +73,14 @@ export function TorchModelSettings({ onMainModelChanged }: TorchModelSettingsPro
   const m = t.settings.model
   const models = useStore($torchModels)
   const loaded = useStore($torchModelsLoaded)
+  const brand = useStore($torchBrand)
+  const keyState = useStore($torchApiKeys)
   const { data: config } = useHermesConfigRecord()
   const [selected, setSelected] = useState('')
   const [auxiliary, setAuxiliary] = useState<AuxiliaryModelsResponse | null>(null)
   const [applying, setApplying] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [newKey, setNewKey] = useState('')
 
   const loadAux = useCallback(async () => {
     try {
@@ -133,6 +148,33 @@ export function TorchModelSettings({ onMainModelChanged }: TorchModelSettingsPro
     }
   }
 
+  // Re-point the model at the built-in endpoint with the current active key,
+  // then reload the catalog so the dropdown reflects what the key can see.
+  const syncKey = async () => {
+    await reapplyTorchModel().catch(() => {})
+    await loadTorchModels()
+  }
+
+  const onAddKey = async () => {
+    const k = newKey.trim()
+    if (!k) {
+      return
+    }
+    addTorchKey(k)
+    setNewKey('')
+    await syncKey()
+  }
+
+  const onRemoveKey = async (index: number) => {
+    removeTorchKey(index)
+    await syncKey()
+  }
+
+  const onActivateKey = async (index: number) => {
+    setActiveTorchKey(index)
+    await syncKey()
+  }
+
   // Pin an auxiliary task to a Torch model, or `MAIN` to follow the main model.
   // provider='custom' resolves to the main custom endpoint (the proxy), so only
   // the model id needs to change; 'auto' clears the pin.
@@ -170,6 +212,73 @@ export function TorchModelSettings({ onMainModelChanged }: TorchModelSettingsPro
   return (
     <div className="grid gap-6">
       <section>
+        <SectionHeading icon={KeyRound} title="接入配置" />
+        <p className="mb-2 mt-1 text-xs text-muted-foreground">
+          推理地址已内置，填入你自己的 API Key 即可拉取模型并开始使用。可添加多个 Key，点选启用其中一个。
+        </p>
+
+        <label className="mb-3 grid gap-1 text-xs">
+          <span className="text-muted-foreground">推理地址（内置，不可修改）</span>
+          <Input className={CONTROL_TEXT} readOnly value={brand.apiBaseUrl || '未配置'} />
+        </label>
+
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Input
+            className={`${CONTROL_TEXT} flex-1 min-w-48`}
+            onChange={e => setNewKey(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                void onAddKey()
+              }
+            }}
+            placeholder="填入 API Key，回车或点添加"
+            type="password"
+            value={newKey}
+          />
+          <Button disabled={!newKey.trim()} onClick={() => void onAddKey()} size="sm" variant="textStrong">
+            <Plus />
+            添加
+          </Button>
+        </div>
+
+        {keyState.keys.length === 0 ? (
+          <p className="text-xs text-muted-foreground">尚未添加 Key。</p>
+        ) : (
+          <div className="grid gap-1">
+            {keyState.keys.map((key, i) => {
+              const active = i === keyState.activeIndex
+              return (
+                <div className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs" key={`${key}-${i}`}>
+                  <button
+                    className="flex items-center gap-1.5"
+                    disabled={active}
+                    onClick={() => void onActivateKey(i)}
+                    type="button"
+                  >
+                    <span
+                      className={`flex size-4 items-center justify-center rounded-full border ${active ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}
+                    >
+                      {active && <Check className="size-3" />}
+                    </span>
+                    <span className="font-mono">{maskKey(key)}</span>
+                  </button>
+                  {active && <span className="text-primary">启用中</span>}
+                  <Button
+                    className="ml-auto"
+                    onClick={() => void onRemoveKey(i)}
+                    size="icon"
+                    variant="text"
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section>
         <p className="mb-3 text-xs text-muted-foreground">
           应用于新会话。可在输入框的模型选择器中临时切换当前对话。
         </p>
@@ -195,7 +304,7 @@ export function TorchModelSettings({ onMainModelChanged }: TorchModelSettingsPro
         </div>
 
         {loaded && models.length === 0 && (
-          <p className="mt-2 text-xs text-muted-foreground">未获取到模型,请确认已登录且后台「模型目录」已启用模型。</p>
+          <p className="mt-2 text-xs text-muted-foreground">未获取到模型,请确认已填入有效 API Key,且内置推理地址可用。</p>
         )}
 
         {config && (
