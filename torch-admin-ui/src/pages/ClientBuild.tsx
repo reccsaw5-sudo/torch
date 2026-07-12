@@ -29,6 +29,7 @@ export default function ClientBuild() {
   const [picked, setPicked] = useState<string[]>(PLATFORMS.map(p => p.id))
   const [runs, setRuns] = useState<BuildRun[]>([])
   const [files, setFiles] = useState<BuildFile[]>([])
+  const [genAt, setGenAt] = useState<number | null>(null)
   const [dlNote, setDlNote] = useState('')
   const [err, setErr] = useState('')
   const [msg, setMsg] = useState('')
@@ -58,6 +59,7 @@ export default function ClientBuild() {
     try {
       const d = await api.getBuildDownloads()
       setFiles(d.files ?? [])
+      setGenAt(d.generated_at ?? null)
       setDlNote(d.configured ? d.note ?? '' : '未配置 COS 域名')
     } catch {
       // ignore
@@ -162,6 +164,9 @@ export default function ClientBuild() {
 
       <section className="max-w-2xl space-y-3 rounded-lg border p-4">
         <h3 className="text-sm font-medium">下载链接(最新一次成功构建)</h3>
+        {genAt && (
+          <p className="text-xs text-muted-foreground">构建时间:{new Date(genAt * 1000).toLocaleString()}</p>
+        )}
         {files.length === 0 ? (
           <p className="text-sm text-muted-foreground">{dlNote || '暂无安装包。构建完成后会自动出现。'}</p>
         ) : (
