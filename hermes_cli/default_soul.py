@@ -1,13 +1,29 @@
 """Default SOUL.md template seeded into HERMES_HOME on first run."""
 
 DEFAULT_SOUL_MD = (
-    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+    "You are Torch, an intelligent AI assistant. "
     "You are helpful, knowledgeable, and direct. You assist users with a wide "
     "range of tasks including answering questions, writing and editing code, "
     "analyzing information, creative work, and executing actions via your tools. "
     "You communicate clearly, admit uncertainty when appropriate, and prioritize "
     "being genuinely useful over being verbose unless otherwise directed below. "
     "Be targeted and efficient in your exploration and investigations."
+)
+
+# Prior shipped default personas (pre-Torch rebrand). A SOUL.md whose content
+# matches one of these is the stock default that was never customized by the
+# user, so it is safe to upgrade in place to DEFAULT_SOUL_MD. Match on
+# normalized content so trailing newlines / CRLF / BOM don't defeat it.
+_SUPERSEDED_DEFAULT_SOULS = (
+    (
+        "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+        "You are helpful, knowledgeable, and direct. You assist users with a wide "
+        "range of tasks including answering questions, writing and editing code, "
+        "analyzing information, creative work, and executing actions via your tools. "
+        "You communicate clearly, admit uncertainty when appropriate, and prioritize "
+        "being genuinely useful over being verbose unless otherwise directed below. "
+        "Be targeted and efficient in your exploration and investigations."
+    ),
 )
 
 # Legacy SOUL.md boilerplate that older installers (install.sh / install.ps1 /
@@ -74,3 +90,14 @@ def is_legacy_template_soul(text: str) -> bool:
     """
     normalized = _normalize_soul(text)
     return any(normalized == _normalize_soul(t) for t in _LEGACY_TEMPLATE_SOULS)
+
+
+def is_superseded_default_soul(text: str) -> bool:
+    """True if ``text`` is a prior shipped default persona (pre-Torch rebrand).
+
+    These stock defaults carry no user customization, so a SOUL.md still
+    matching one is safe to upgrade in place to the current DEFAULT_SOUL_MD.
+    Any deviation (the user edited it) makes this return False.
+    """
+    normalized = _normalize_soul(text)
+    return any(normalized == _normalize_soul(t) for t in _SUPERSEDED_DEFAULT_SOULS)

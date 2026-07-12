@@ -299,7 +299,11 @@ _EXTRA_ENV_KEYS = frozenset({
 import yaml
 
 from hermes_cli.colors import Colors, color
-from hermes_cli.default_soul import DEFAULT_SOUL_MD, is_legacy_template_soul
+from hermes_cli.default_soul import (
+    DEFAULT_SOUL_MD,
+    is_legacy_template_soul,
+    is_superseded_default_soul,
+)
 
 
 # =============================================================================
@@ -832,9 +836,10 @@ def _ensure_default_soul_md(home: Path) -> None:
             existing = soul_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             return
-        if not is_legacy_template_soul(existing):
+        if not (is_legacy_template_soul(existing) or is_superseded_default_soul(existing)):
             return
-        # Legacy empty template -> upgrade to the real default in place.
+        # Legacy empty template or a prior shipped default persona (pre-Torch
+        # rebrand) -> upgrade to the current default in place.
     soul_path.write_text(DEFAULT_SOUL_MD, encoding="utf-8")
     _secure_file(soul_path)
 
