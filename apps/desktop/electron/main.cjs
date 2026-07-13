@@ -1898,6 +1898,28 @@ async function resolveHealedBranch(updateRoot, branch) {
   return 'main'
 }
 
+// Belt-and-suspenders for the insteadOf redirect: rewrite the kernel's stored
+// origin outright to our Gitee mirror whenever it still points at the upstream
+// GitHub repo. The prefix-based `-c insteadOf` only rewrites URLs that match the
+// exact `.git` form; an origin recorded without the suffix (or otherwise slightly
+// different) would slip through and fetch GitHub — unreachable behind the GFW.
+// Rewriting the URL itself removes that fragility and repairs installs whose
+// .git/config was never pinned at bootstrap. Idempotent; failure is non-fatal.
+async function ensureGiteeOrigin(updateRoot) {
+  try {
+    const url = (await getOriginUrl(updateRoot)).toLowerCase()
+    if (!url || url.includes('gitee.com')) {
+      return
+    }
+    if (url.includes('github.com') && url.includes('nousresearch/hermes-agent')) {
+      await runGit(['remote', 'set-url', 'origin', RUNTIME_MIRROR_GIT], { cwd: updateRoot })
+      rememberLog(`[updates] origin 换源→Gitee 镜像 ${RUNTIME_MIRROR_GIT}`)
+    }
+  } catch (err) {
+    rememberLog(`[updates] origin 换源失败: ${err && err.message}`)
+  }
+}
+
 async function checkUpdates() {
   const updateRoot = resolveUpdateRoot()
   let { branch } = readDesktopUpdateConfig()
@@ -1912,6 +1934,7 @@ async function checkUpdates() {
     }
   }
 
+  await ensureGiteeOrigin(updateRoot)
   branch = await resolveHealedBranch(updateRoot, branch)
   const originUrl = await getOriginUrl(updateRoot)
   if (isOfficialSshRemote(originUrl)) {
@@ -1924,11 +1947,13 @@ async function checkUpdates() {
     ])
     const targetSha = firstLine(target.stdout).split(/\s+/)[0] || ''
     if (target.code !== 0 || !targetSha) {
+      const message = firstLine(target.stderr) || 'git ls-remote failed.'
+      rememberLog(`[updates] ls-remote failed: ${message}`)
       return {
         supported: true,
         branch,
         error: 'fetch-failed',
-        message: firstLine(target.stderr) || 'git ls-remote failed.',
+        message,
         hermesRoot: updateRoot,
         fetchedAt: Date.now()
       }
@@ -1949,11 +1974,13 @@ async function checkUpdates() {
 
   const fetched = await runGit(['fetch', '--quiet', 'origin', branch], { cwd: updateRoot })
   if (fetched.code !== 0) {
+    const message = firstLine(fetched.stderr) || 'git fetch failed.'
+    rememberLog(`[updates] git fetch failed (origin=${originUrl}): ${message}`)
     return {
       supported: true,
       branch,
       error: 'fetch-failed',
-      message: firstLine(fetched.stderr) || 'git fetch failed.',
+      message,
       hermesRoot: updateRoot,
       fetchedAt: Date.now()
     }
@@ -2222,6 +2249,11 @@ async function applyUpdates(opts = {}) {
   updateInFlight = true
 
   try {
+    // Route the pull through our Gitee mirror even when apply runs without a
+    // prior check (e.g. "Update now"): the external updater / `hermes update`
+    // pulls via the kernel's own .git/config, so the origin must already point
+    // at our fork on Gitee (not the GFW-blocked upstream GitHub).
+    await ensureGiteeOrigin(resolveUpdateRoot())
     const updater = resolveUpdaterBinary()
     if (!updater && !IS_WINDOWS) {
       // macOS/Linux drag-install: no staged Tauri hermes-setup. Unlike Windows
@@ -7278,13 +7310,17 @@ ipcMain.handle('hermes:terminal:resize', (_event, id, size = {}) => {
 ipcMain.handle('hermes:terminal:dispose', (_event, id) => disposeTerminalSession(String(id || '')))
 
 ipcMain.handle('hermes:updates:check', async () =>
-  checkUpdates().catch(error => ({
-    supported: true,
-    branch: readDesktopUpdateConfig().branch,
-    error: 'check-failed',
-    message: error?.message || String(error),
-    fetchedAt: Date.now()
-  }))
+  checkUpdates().catch(error => {
+    const message = error?.message || String(error)
+    rememberLog(`[updates] check threw: ${message}`)
+    return {
+      supported: true,
+      branch: readDesktopUpdateConfig().branch,
+      error: 'check-failed',
+      message,
+      fetchedAt: Date.now()
+    }
+  })
 )
 
 ipcMain.handle('hermes:updates:apply', async (_event, payload) =>
