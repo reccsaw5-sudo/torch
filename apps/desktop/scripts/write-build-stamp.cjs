@@ -95,6 +95,20 @@ function fromLocalGit() {
   }
 }
 
+// Mirror .github/scripts/torch_publish_cos.py::_base_url so the baked manifest
+// URL points at exactly where the publish step uploads manifest.json.
+function cosManifestUrl() {
+  let base = String(process.env.COS_BASE_URL || "").trim().replace(/\/+$/, "")
+  if (!base) {
+    const bucket = String(process.env.COS_BUCKET || "").trim()
+    const region = String(process.env.COS_REGION || "").trim()
+    if (bucket && region) {
+      base = `https://${bucket}.cos.${region}.myqcloud.com`
+    }
+  }
+  return base ? base + "/clients/latest/manifest.json" : null
+}
+
 function main() {
   const stamp = fromOverride() || fromCI() || fromLocalGit()
   if (!stamp || !stamp.commit) {
@@ -122,11 +136,11 @@ function main() {
 
   // Optional: the URL of the download manifest published to COS. Baked here so
   // the packaged app can check for a newer INSTALLER (the Electron shell, which
-  // can't self-update via git like the kernel does). Only present when the
-  // build was given $COS_BASE_URL; a local/dev build leaves it null and the
-  // app-shell update check no-ops.
-  const cosBase = String(process.env.COS_BASE_URL || "").trim().replace(/\/+$/, "")
-  const updateManifestUrl = cosBase ? cosBase + "/clients/latest/manifest.json" : null
+  // can't self-update via git like the kernel does). This MUST resolve to the
+  // same base torch_publish_cos.py uploads to (_base_url): $COS_BASE_URL if
+  // set, else the default bucket URL from $COS_BUCKET/$COS_REGION. A local/dev
+  // build with none of these set leaves it null and the check no-ops.
+  const updateManifestUrl = cosManifestUrl()
 
   const payload = {
     schemaVersion: STAMP_SCHEMA_VERSION,

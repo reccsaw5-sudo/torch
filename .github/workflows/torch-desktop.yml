@@ -74,8 +74,12 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           # 把下载 manifest 地址写进 install-stamp,客户端据此检查"外壳(.exe)"
           # 是否有新版(内核走 git 更新,外壳是打包二进制得下新安装包)。
-          # 没配 COS_BASE_URL 时留空,客户端外壳更新检查自动跳过。
+          # 必须与 publish-cos 的 _base_url 完全同源,否则客户端会去错误的地址找
+          # manifest:同样优先 vars.COS_BASE_URL(当前为空),否则用 bucket+region
+          # 拼默认桶地址(= 当前实际提供下载的地址)。都没有时留空,检查自动跳过。
           COS_BASE_URL: ${{ vars.COS_BASE_URL }}
+          COS_BUCKET: ${{ secrets.COS_BUCKET }}
+          COS_REGION: ${{ secrets.COS_REGION }}
         run: |
           npm run build
           npm run builder -- ${{ matrix.args }} --publish never
