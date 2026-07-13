@@ -165,6 +165,9 @@ export interface Translations {
     updateReadyTitle: string
     updateReadyMessage: (count: number) => string
     seeWhatsNew: string
+    appUpdateTitle: string
+    appUpdateMessage: string
+    appUpdateDownload: string
     errors: {
       elevenLabsNeedsKey: string
       elevenLabsRejectedKey: string

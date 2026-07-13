@@ -124,6 +124,9 @@ export const ja = defineLocale({
     updateReadyTitle: '更新の準備ができました',
     updateReadyMessage: count => `${count} 件の新しい変更が利用可能です。`,
     seeWhatsNew: '新機能を見る',
+    appUpdateTitle: '新しいバージョンがあります',
+    appUpdateMessage: '新しい Torch インストーラーがあります。ダウンロードして更新してください。',
+    appUpdateDownload: 'ダウンロードを開く',
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT には ELEVENLABS_API_KEY が必要です。',
       elevenLabsRejectedKey: 'ElevenLabs が API キーを拒否しました (401)。',

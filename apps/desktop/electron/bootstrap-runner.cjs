@@ -76,6 +76,30 @@ function ensureGiteeGitConfig() {
   return _giteeGitConfigPath
 }
 
+// 安装成功后,把内核仓库的 git 换源"钉死"在 Gitee 镜像(我方 fork)。
+// clone 时 origin 记的是上游 github 地址(insteadOf 只在传输时改写,不改存储的
+// URL),而在线更新(electron/main.cjs 的 runGit)和手动 `hermes update` 都不带
+// 我们那份临时 insteadOf 配置——若不处理,更新会从上游 Hermes 拉代码,把我方
+// fork(路由/白标)冲掉,聊天再次失效。这里把 insteadOf 直接写进内核仓库自己的
+// .git/config(纯文件操作、不依赖 git 可执行文件,且对该仓库所有后续 git 操作
+// 永久生效),从而保证在线更新拉取的是我方 fork。幂等;失败不致命。
+function pinRuntimeRemoteToMirror(activeRoot, emit) {
+  try {
+    const cfgPath = path.join(activeRoot, '.git', 'config')
+    if (!fs.existsSync(cfgPath)) return
+    const existing = fs.readFileSync(cfgPath, 'utf8')
+    if (existing.includes(RUNTIME_MIRROR_GIT) && existing.includes('insteadOf')) return
+    const block =
+      `\n[url "${RUNTIME_MIRROR_GIT}"]\n` +
+      `\tinsteadOf = ${RUNTIME_UPSTREAM_HTTPS}\n` +
+      `\tinsteadOf = ${RUNTIME_UPSTREAM_SSH}\n`
+    fs.appendFileSync(cfgPath, block, 'utf8')
+    emit({ type: 'log', line: '[torch] 内核 git 已换源到 Gitee 镜像(在线更新将拉取我方 fork)', stream: 'stdout' })
+  } catch (err) {
+    emit({ type: 'log', line: `[torch] 内核 git 换源失败(在线更新可能走上游): ${err && err.message}`, stream: 'stderr' })
+  }
+}
+
 // 国内镜像加速:首启时 install.ps1/sh 用 uv/pip 装 Python 依赖、npm 装 node 依赖、
 // uv 下 Python 解释器、git clone 运行内核,默认全走境外源,在国内慢/被重置。这里
 // 把各工具认的标准环境变量指向国内可达镜像。只在用户没自己设过时才注入(海外/CI
@@ -831,6 +855,10 @@ async function runBootstrap(opts) {
         return { ok: false, failedStage: stage.name, error: ev.error }
       }
     }
+
+    // 3.5 换源:把内核仓库 git 指向 Gitee 镜像(我方 fork),保证在线更新/手动
+    //     `hermes update` 拉取的是我们的代码,而不是上游 Hermes。
+    pinRuntimeRemoteToMirror(activeRoot, emit)
 
     // 4. Write the bootstrap-complete marker.
     const markerPayload = {

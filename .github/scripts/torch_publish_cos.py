@@ -60,7 +60,10 @@ def main() -> int:
             {"platform": _platform_of(f), "name": f.name, "url": f"{base}/{key}"}
         )
         print(f"uploaded {f.name} -> {base}/{key}")
-    manifest = {"generated_at": int(time.time()), "files": entries}
+    # commit:本次构建对应的运行时 commit(与客户端内置的 install-stamp.commit 同源)。
+    # 客户端拉这份 manifest,发现 commit 与自身不同且发布时间更新时,提示下载新外壳。
+    commit = (os.getenv("TORCH_RUNTIME_COMMIT") or os.getenv("GITHUB_SHA") or "").strip()
+    manifest = {"generated_at": int(time.time()), "commit": commit, "files": entries}
     mpath = Path("manifest.json")
     mpath.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     _coscmd_upload(mpath, f"{COS_PREFIX}/manifest.json")

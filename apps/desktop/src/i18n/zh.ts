@@ -120,6 +120,9 @@ export const zh: Translations = {
     updateReadyTitle: '有可用更新',
     updateReadyMessage: count => `有 ${count} 项新更改可用。`,
     seeWhatsNew: '查看更新内容',
+    appUpdateTitle: '发现新版本',
+    appUpdateMessage: '有更新的 Torch 安装包,点击下载即可更新。',
+    appUpdateDownload: '打开下载页',
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒绝了该 API key (401)。',

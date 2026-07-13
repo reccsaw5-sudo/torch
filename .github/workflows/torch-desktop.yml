@@ -72,6 +72,10 @@ jobs:
         env:
           # 未签名:关闭 mac 证书自动发现,notarize 无凭据会自动跳过。
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # 把下载 manifest 地址写进 install-stamp,客户端据此检查"外壳(.exe)"
+          # 是否有新版(内核走 git 更新,外壳是打包二进制得下新安装包)。
+          # 没配 COS_BASE_URL 时留空,客户端外壳更新检查自动跳过。
+          COS_BASE_URL: ${{ vars.COS_BASE_URL }}
         run: |
           npm run build
           npm run builder -- ${{ matrix.args }} --publish never
@@ -111,6 +115,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
+
+      - name: Resolve runtime commit (from Gitee mirror)
+        shell: bash
+        run: |
+          # 与 build 阶段同源解析,保证 manifest 里的 commit 与客户端内置的
+          # commit 一致 —— 客户端据此判断 COS 上是否有更新的外壳版本。
+          REF="${{ github.event.inputs.runtime_ref }}"
+          REF="${REF:-main}"
+          SHA=$(git ls-remote https://gitee.com/Gitsongsong/hermes-agent.git "$REF" | awk '{print $1}' | head -n1)
+          if [ -z "$SHA" ]; then echo "无法从 Gitee 镜像解析 ref: $REF"; exit 1; fi
+          echo "TORCH_RUNTIME_COMMIT=$SHA" >> "$GITHUB_ENV"
+          echo "manifest commit 固定到(Gitee): $REF -> $SHA"
 
       - name: Upload to Tencent COS + write manifest
         shell: bash

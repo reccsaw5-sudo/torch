@@ -120,6 +120,9 @@ export const zhHant = defineLocale({
     updateReadyTitle: '有可用更新',
     updateReadyMessage: count => `有 ${count} 項新變更可用。`,
     seeWhatsNew: '查看新增內容',
+    appUpdateTitle: '發現新版本',
+    appUpdateMessage: '有更新的 Torch 安裝包,點擊下載即可更新。',
+    appUpdateDownload: '開啟下載頁',
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒絕了該 API 金鑰 (401)。',

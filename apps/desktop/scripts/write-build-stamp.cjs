@@ -13,7 +13,8 @@
  *     "branch":        "<branch name>",
  *     "builtAt":       "<ISO 8601 UTC timestamp>",
  *     "dirty":         true|false,
- *     "source":        "ci" | "local"
+ *     "source":        "ci" | "local",
+ *     "updateManifestUrl": "<COS manifest URL>" | null
  *   }
  *
  * Source preference order:
@@ -119,13 +120,22 @@ function main() {
     )
   }
 
+  // Optional: the URL of the download manifest published to COS. Baked here so
+  // the packaged app can check for a newer INSTALLER (the Electron shell, which
+  // can't self-update via git like the kernel does). Only present when the
+  // build was given $COS_BASE_URL; a local/dev build leaves it null and the
+  // app-shell update check no-ops.
+  const cosBase = String(process.env.COS_BASE_URL || "").trim().replace(/\/+$/, "")
+  const updateManifestUrl = cosBase ? cosBase + "/clients/latest/manifest.json" : null
+
   const payload = {
     schemaVersion: STAMP_SCHEMA_VERSION,
     commit: stamp.commit,
     branch: stamp.branch,
     builtAt: new Date().toISOString(),
     dirty: stamp.dirty,
-    source: stamp.source
+    source: stamp.source,
+    updateManifestUrl: updateManifestUrl
   }
 
   fs.mkdirSync(OUT_DIR, { recursive: true })

@@ -123,6 +123,9 @@ export const en: Translations = {
     updateReadyTitle: 'Update ready',
     updateReadyMessage: count => `${count} new change${count === 1 ? '' : 's'} available.`,
     seeWhatsNew: "See what's new",
+    appUpdateTitle: 'New version available',
+    appUpdateMessage: 'A newer Torch installer is available. Download it to update.',
+    appUpdateDownload: 'Open download',
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT needs ELEVENLABS_API_KEY.',
       elevenLabsRejectedKey: 'ElevenLabs rejected the API key (401).',

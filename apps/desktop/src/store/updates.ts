@@ -194,6 +194,68 @@ export function maybeNotifyUpdateAvailable(status: DesktopUpdateStatus | null) {
   })
 }
 
+// App-shell (packaged installer) update toast. Distinct from the kernel/backend
+// update above: this fires when a NEWER desktop installer has been published to
+// the download manifest. Unsigned builds can't self-update on macOS, so we only
+// prompt the user to download it. Snoozed for a cooldown window on close so a
+// rebuilt installer doesn't nag on every poll.
+const APP_UPDATE_TOAST_ID = 'desktop-app-shell-update-available'
+const APP_UPDATE_TOAST_SNOOZE_KEY = 'hermes:app-update-toast-snooze-until'
+const APP_UPDATE_TOAST_COOLDOWN_MS = 24 * 60 * 60 * 1000
+
+function snoozeAppUpdateToast(): void {
+  persistString(APP_UPDATE_TOAST_SNOOZE_KEY, String(Date.now() + APP_UPDATE_TOAST_COOLDOWN_MS))
+}
+
+function isAppUpdateToastSnoozed(): boolean {
+  const until = Number(storedString(APP_UPDATE_TOAST_SNOOZE_KEY) || 0)
+
+  return Number.isFinite(until) && Date.now() < until
+}
+
+export async function checkAppShellUpdate(): Promise<void> {
+  const bridge = window.hermesDesktop?.updates
+
+  if (!bridge?.appCheck) {
+    return
+  }
+
+  let status
+
+  try {
+    status = await bridge.appCheck()
+  } catch {
+    return
+  }
+
+  if (!status?.updateAvailable || !status.downloadUrl) {
+    return
+  }
+
+  if (isAppUpdateToastSnoozed()) {
+    return
+  }
+
+  const downloadUrl = status.downloadUrl
+
+  notify({
+    action: {
+      label: translateNow('notifications.appUpdateDownload'),
+      onClick: () => {
+        snoozeAppUpdateToast()
+        void window.hermesDesktop?.openExternal?.(downloadUrl)
+      }
+    },
+    durationMs: 0,
+    icon: 'gift',
+    id: APP_UPDATE_TOAST_ID,
+    kind: 'info',
+    message: translateNow('notifications.appUpdateMessage'),
+    onDismiss: () => snoozeAppUpdateToast(),
+    title: translateNow('notifications.appUpdateTitle')
+  })
+}
+
 export function openUpdatesWindow(): void {
   openUpdateOverlayFor(isRemoteMode() ? 'backend' : 'client')
 }
@@ -618,6 +680,7 @@ export function startUpdatePoller(): void {
   pollerStarted = true
   void checkUpdates()
   void checkBackendUpdates()
+  void checkAppShellUpdate()
   void refreshDesktopVersion()
   bridge.onProgress(ingestProgress)
 
@@ -641,6 +704,7 @@ export function startUpdatePoller(): void {
     () => {
       void checkUpdates()
       void checkBackendUpdates()
+      void checkAppShellUpdate()
     },
     30 * 60 * 1000
   )
@@ -669,5 +733,6 @@ function onFocus() {
   lastFocusAt = now
   void checkUpdates()
   void checkBackendUpdates()
+  void checkAppShellUpdate()
   void refreshDesktopVersion()
 }

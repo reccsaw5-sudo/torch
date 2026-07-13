@@ -268,6 +268,7 @@ function loadInstallStamp() {
           builtAt: parsed.builtAt || null,
           dirty: Boolean(parsed.dirty),
           source: parsed.source || null,
+          updateManifestUrl: typeof parsed.updateManifestUrl === 'string' ? parsed.updateManifestUrl : null,
           path: p
         })
       }
@@ -2724,6 +2725,22 @@ function isBootstrapComplete() {
   if (!marker || typeof marker !== 'object') return false
   if (marker.schemaVersion !== BOOTSTRAP_MARKER_SCHEMA_VERSION) return false
   if (typeof marker.pinnedCommit !== 'string' || marker.pinnedCommit.length < 7) return false
+  // Safety net for the step 2.9 auto-wipe in resolveHermesBackend: if this
+  // packaged build bakes a different runtime commit than the marker recorded,
+  // the user installed a NEW desktop package. Treat the prior bootstrap as
+  // stale so the resolver re-installs the pinned kernel rather than silently
+  // reusing the old (possibly upstream) one. This still forces a reinstall
+  // even if the wipe failed (e.g. a locked file on Windows). An in-app kernel
+  // update only moves HEAD, not the marker's pinnedCommit, so it never trips.
+  if (
+    IS_PACKAGED &&
+    INSTALL_STAMP &&
+    typeof INSTALL_STAMP.commit === 'string' &&
+    INSTALL_STAMP.commit.length >= 7 &&
+    marker.pinnedCommit !== INSTALL_STAMP.commit
+  ) {
+    return false
+  }
   // We DELIBERATELY do NOT verify that the checkout is currently at the
   // pinned commit -- users update via the in-app update path or `hermes
   // update`, which moves HEAD legitimately. The marker just attests "we
@@ -2745,6 +2762,40 @@ function writeBootstrapMarker(payload) {
   }
   writeFileAtomic(BOOTSTRAP_COMPLETE_MARKER, JSON.stringify(merged, null, 2) + '\n', 'utf8')
   return merged
+}
+
+// True when a completed bootstrap exists but was pinned to a DIFFERENT runtime
+// commit than the one THIS (freshly installed) desktop package bakes — i.e. the
+// user just installed a new .exe whose kernel differs from what's already on
+// disk. The stale kernel may even come from a different source (an older build
+// that pulled upstream), so it must be replaced rather than reused. We compare
+// the marker's pinnedCommit (what the last bootstrap installed) against
+// INSTALL_STAMP.commit (what this binary bakes); an in-app kernel update that
+// merely moves HEAD does NOT change either, so it never trips this.
+function bakedRuntimeCommitChanged() {
+  if (!INSTALL_STAMP || typeof INSTALL_STAMP.commit !== 'string' || INSTALL_STAMP.commit.length < 7) {
+    return false
+  }
+  const marker = readBootstrapMarker()
+  if (!marker || typeof marker.pinnedCommit !== 'string' || marker.pinnedCommit.length < 7) {
+    return false
+  }
+  return marker.pinnedCommit !== INSTALL_STAMP.commit
+}
+
+// Wipe the on-disk kernel checkout so the next bootstrap re-clones the pinned
+// commit fresh. Only ACTIVE_HERMES_ROOT (the hermes-agent checkout + its venv)
+// is removed; user data (config.yaml, SOUL.md, sessions, .env) lives in
+// HERMES_HOME's other subdirs and is untouched. Deleting the checkout also
+// removes the bootstrap-complete marker (it lives inside), so the resolver
+// falls through to a clean bootstrap.
+function wipeActiveRuntimeForReinstall(reason) {
+  rememberLog(`[bootstrap] ${reason}; wiping ${ACTIVE_HERMES_ROOT} for a clean kernel reinstall`)
+  try {
+    fs.rmSync(ACTIVE_HERMES_ROOT, { recursive: true, force: true })
+  } catch (error) {
+    rememberLog(`[bootstrap] failed to wipe active runtime: ${error && error.message}`)
+  }
 }
 
 function resolveWebDist() {
@@ -2966,6 +3017,21 @@ function resolveHermesBackend(backendArgs) {
   //    completed initial configuration; we trust the install and go straight
   //    to spawning hermes. Updates flow through the in-app update path
   //    (applyUpdates -> git pull) or `hermes update` from the CLI.
+  //
+  //    2.9 Auto-swap on new package: if this .exe bakes a different runtime
+  //    commit than the on-disk kernel was bootstrapped against, the user just
+  //    installed a new desktop package. Wipe the stale kernel so the bootstrap
+  //    below re-clones the pinned commit fresh (this removes the marker too, so
+  //    isBootstrapComplete() then returns false). Fixes "installed the new
+  //    package but chat still runs the old/upstream kernel" without the user
+  //    having to manually delete the hermes-agent folder.
+  if (IS_PACKAGED && bakedRuntimeCommitChanged()) {
+    const marker = readBootstrapMarker()
+    wipeActiveRuntimeForReinstall(
+      `desktop package runtime commit changed (on-disk ${String(marker && marker.pinnedCommit).slice(0, 12)} != baked ${INSTALL_STAMP.commit.slice(0, 12)})`
+    )
+  }
+
   if (isBootstrapComplete()) {
     return createActiveBackend(backendArgs)
   }
@@ -7219,6 +7285,112 @@ ipcMain.handle('hermes:updates:branch:set', async (_event, name) => {
   writeDesktopUpdateConfig({ branch })
   return { branch }
 })
+
+// ---- App-shell (packaged .exe/.dmg) update check ---------------------------
+// The in-app update path above (hermes:updates:*) updates the KERNEL git
+// checkout in place. The Electron shell itself is a packaged binary that can't
+// git-pull itself, so a rebuilt installer (new UI / icon / bootstrap logic) is
+// distributed out-of-band via the download manifest published to COS. An
+// unsigned build cannot be silently self-updated on macOS, so this only
+// DETECTS a newer build and lets the renderer prompt the user to download it.
+//
+// Signal: the build stamp bakes updateManifestUrl (derived from COS_BASE_URL)
+// plus the runtime commit this binary was built against. The COS manifest
+// carries the commit of the latest published build; a differing commit AND a
+// strictly later publish time means a newer installer is available.
+const APP_UPDATE_MANIFEST_URL =
+  INSTALL_STAMP && typeof INSTALL_STAMP.updateManifestUrl === 'string'
+    ? INSTALL_STAMP.updateManifestUrl.trim()
+    : ''
+
+function appUpdatePlatformKey() {
+  const arch = process.arch === 'ia32' ? 'ia32' : process.arch === 'arm64' ? 'arm64' : 'x64'
+  if (process.platform === 'darwin') return `mac-${arch === 'ia32' ? 'x64' : arch}`
+  if (process.platform === 'win32') return `win-${arch === 'arm64' ? 'arm64' : arch}`
+  if (process.platform === 'linux') return `linux-${arch === 'ia32' ? 'x64' : arch}`
+  return ''
+}
+
+function fetchJsonOverHttp(url, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    let mod
+    try {
+      mod = url.startsWith('http://') ? require('node:http') : require('node:https')
+    } catch (error) {
+      reject(error)
+      return
+    }
+    const req = mod.get(url, res => {
+      const status = res.statusCode || 0
+      if (status < 200 || status >= 300) {
+        res.resume()
+        reject(new Error(`HTTP ${status}`))
+        return
+      }
+      const chunks = []
+      res.on('data', chunk => chunks.push(chunk))
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+        } catch (error) {
+          reject(error)
+        }
+      })
+    })
+    req.on('error', reject)
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('timeout')))
+  })
+}
+
+function pickAppInstallerUrl(files, platformKey) {
+  const list = Array.isArray(files)
+    ? files.filter(f => f && typeof f.url === 'string' && typeof f.name === 'string')
+    : []
+  const forPlatform = platformKey ? list.filter(f => f.platform === platformKey) : []
+  const pool = forPlatform.length ? forPlatform : list
+  const preferred = /\.(dmg|exe|AppImage)$/i
+  const chosen = pool.find(f => preferred.test(f.name)) || pool[0] || null
+  return chosen ? chosen.url : ''
+}
+
+async function checkAppShellUpdate() {
+  if (!APP_UPDATE_MANIFEST_URL || !INSTALL_STAMP || typeof INSTALL_STAMP.commit !== 'string') {
+    return { supported: false, updateAvailable: false }
+  }
+  let manifest
+  try {
+    manifest = await fetchJsonOverHttp(APP_UPDATE_MANIFEST_URL)
+  } catch (error) {
+    return { supported: true, updateAvailable: false, error: 'check-failed', message: error && error.message }
+  }
+  const remoteCommit = typeof manifest.commit === 'string' ? manifest.commit.trim() : ''
+  const generatedAtMs = (Number(manifest.generated_at) || 0) * 1000
+  const builtAtMs = Date.parse(INSTALL_STAMP.builtAt || '') || 0
+  // Newer only when the published build is strictly later than ours; guards
+  // against a stale / rolled-back manifest prompting a "downgrade". When either
+  // timestamp is unavailable, fall back to the commit-difference signal alone.
+  const strictlyNewer = generatedAtMs > 0 && builtAtMs > 0 ? generatedAtMs > builtAtMs : true
+  const updateAvailable = remoteCommit.length >= 7 && remoteCommit !== INSTALL_STAMP.commit && strictlyNewer
+  return {
+    supported: true,
+    updateAvailable,
+    currentCommit: INSTALL_STAMP.commit,
+    remoteCommit,
+    downloadUrl: updateAvailable ? pickAppInstallerUrl(manifest.files, appUpdatePlatformKey()) : '',
+    generatedAt: Number(manifest.generated_at) || 0,
+    fetchedAt: Date.now()
+  }
+}
+
+ipcMain.handle('hermes:app-update:check', async () =>
+  checkAppShellUpdate().catch(error => ({
+    supported: true,
+    updateAvailable: false,
+    error: 'check-failed',
+    message: error?.message || String(error),
+    fetchedAt: Date.now()
+  }))
+)
 
 // Resolve the canonical Hermes version (the one `release.py` bumps in
 // hermes_cli/__init__.py + pyproject.toml) so the desktop About panel shows the

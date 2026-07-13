@@ -179,6 +179,7 @@ declare global {
       updates: {
         check: () => Promise<DesktopUpdateStatus>
         apply: (opts?: DesktopUpdateApplyOptions) => Promise<DesktopUpdateApplyResult>
+        appCheck: () => Promise<DesktopAppUpdateStatus>
         getBranch: () => Promise<{ branch: string }>
         setBranch: (name: string) => Promise<{ branch: string }>
         onProgress: (callback: (payload: DesktopUpdateProgress) => void) => () => void
@@ -284,6 +285,23 @@ export interface DesktopUpdateStatus {
   targetSha?: string
   commits?: DesktopUpdateCommit[]
   dirty?: boolean
+  fetchedAt?: number
+}
+
+/** Result of checking whether a newer packaged desktop installer (the Electron
+ *  shell itself, not the kernel) has been published to the download manifest.
+ *  Unsigned builds can't self-update on macOS, so the renderer only prompts the
+ *  user to download `downloadUrl`. `supported` is false when the build wasn't
+ *  stamped with a manifest URL (e.g. a local/dev build). */
+export interface DesktopAppUpdateStatus {
+  supported: boolean
+  updateAvailable: boolean
+  currentCommit?: string
+  remoteCommit?: string
+  downloadUrl?: string
+  generatedAt?: number
+  error?: string
+  message?: string
   fetchedAt?: number
 }
 
