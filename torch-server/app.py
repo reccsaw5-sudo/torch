@@ -275,7 +275,10 @@ def _user_by_key(conn, api_key: str):
 
 def _auth_all(conn) -> dict:
     rows = conn.execute("SELECT key, value FROM auth_config").fetchall()
-    data = {r["key"]: r["value"] for r in rows}
+    # Only surface known keys: legacy rows from a superseded WeChat login design
+    # (e.g. wechat_login_*) must not leak into the admin form, or a save would
+    # echo them back and hit admin_set_wechat's strict unknown-keys rejection.
+    data = {r["key"]: r["value"] for r in rows if r["key"] in _AUTH_KEYS}
     for k, v in WECHAT_LOGIN_DEFAULTS.items():
         data.setdefault(k, v)
     return data
