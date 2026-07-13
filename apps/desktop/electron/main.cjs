@@ -1811,11 +1811,28 @@ function resolveUpdateRoot() {
   return candidates.find(c => directoryExists(path.join(c, '.git'))) || candidates[0] || ACTIVE_HERMES_ROOT
 }
 
+// Mirror bootstrap-runner's insteadOf pinning at the git-invocation level so
+// every kernel git op (check/fetch/ls-remote/pull) routes to our fork on Gitee,
+// even when the per-repo .git/config was never pinned (older install, or the
+// pin step failed). The kernel's stored origin is the upstream GitHub URL,
+// which is both unreachable behind the GFW *and* the wrong content (upstream
+// Nous, not our fork) — so without this rewrite "check for updates" fails in CN
+// and a successful pull would clobber our routing/brand fork.
+const RUNTIME_MIRROR_GIT = 'https://gitee.com/Gitsongsong/hermes-agent.git'
+const GITEE_INSTEADOF_ARGS = [
+  '-c',
+  `url.${RUNTIME_MIRROR_GIT}.insteadOf=${OFFICIAL_REPO_HTTPS_URL}`,
+  '-c',
+  `url.${RUNTIME_MIRROR_GIT}.insteadOf=git@github.com:NousResearch/hermes-agent.git`
+]
+
 function runGit(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       resolveGitBinary(),
-      IS_WINDOWS ? ['-c', 'windows.appendAtomically=false', ...args] : args,
+      IS_WINDOWS
+        ? [...GITEE_INSTEADOF_ARGS, '-c', 'windows.appendAtomically=false', ...args]
+        : [...GITEE_INSTEADOF_ARGS, ...args],
       hiddenWindowsChildOptions({
         cwd: options.cwd,
         env: { ...process.env, ...(options.env || {}), GIT_TERMINAL_PROMPT: '0' },
@@ -7392,37 +7409,23 @@ ipcMain.handle('hermes:app-update:check', async () =>
   }))
 )
 
-// Resolve the canonical Hermes version (the one `release.py` bumps in
-// hermes_cli/__init__.py + pyproject.toml) so the desktop About panel shows the
-// real Hermes version instead of the Electron app's own package.json version,
-// which historically drifted (stuck at 0.0.2). Falls back to app.getVersion()
-// when the source tree can't be read (e.g. a packaged build without the repo).
+// Version shown in the About panel / footer is Torch's own desktop-shell
+// version (apps/desktop/package.json, bumped per Torch release), NOT the
+// upstream Hermes kernel version from hermes_cli/__init__.py — surfacing the
+// kernel's number (e.g. 0.18.0) both confused users and leaked upstream
+// branding. app.getVersion() reads the packaged shell's baked package.json.
 function resolveHermesVersion() {
-  try {
-    const root = resolveUpdateRoot()
-    const initPath = path.join(root, 'hermes_cli', '__init__.py')
-    if (fileExists(initPath)) {
-      const raw = fs.readFileSync(initPath, 'utf8')
-      const match = raw.match(/__version__\s*=\s*["']([^"']+)["']/)
-      if (match) {
-        return match[1]
-      }
-    }
-  } catch {
-    // Fall through to the Electron app version below.
-  }
   return app.getVersion()
 }
 
-// Re-resolve the live Hermes version and push it into the native About panel
-// just before showing it, so an in-place `hermes update` is reflected without
-// an app restart. macOS only — `showAboutPanel()` is a no-op elsewhere, and the
-// other platforms don't use this menu item.
+// Push the Torch shell version into the native About panel just before showing
+// it. macOS only — `showAboutPanel()` is a no-op elsewhere, and the other
+// platforms don't use this menu item.
 function showAboutPanelFresh() {
   app.setAboutPanelOptions({
     applicationName: APP_NAME,
     applicationVersion: resolveHermesVersion(),
-    copyright: 'Copyright © 2026 Nous Research'
+    copyright: 'Copyright © 2026 Torch'
   })
   app.showAboutPanel()
 }
