@@ -12,7 +12,7 @@ function CodeCard({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'min-w-0 max-w-full overflow-hidden rounded-[0.625rem] border border-border text-[length:var(--conversation-tool-font-size)] text-muted-foreground',
+        'min-w-0 max-w-full overflow-hidden rounded-[0.625rem] border border-border bg-muted/25 text-[length:var(--conversation-tool-font-size)] text-muted-foreground',
         className
       )}
       data-slot="code-card"
@@ -24,7 +24,7 @@ function CodeCard({ className, ...props }: React.ComponentProps<'div'>) {
 function CodeCardHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
-      className={cn('flex items-center justify-between gap-2 border-b border-border px-2 py-1.5', className)}
+      className={cn('flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-2 py-1.5', className)}
       data-slot="code-card-header"
       {...props}
     />
@@ -56,12 +56,6 @@ function CodeCardIcon({ className, ...props }: CodiconProps) {
   )
 }
 
-function CodeCardSubtitle({ className, ...props }: React.ComponentProps<'span'>) {
-  return (
-    <span className={cn('font-normal text-muted-foreground', className)} data-slot="code-card-subtitle" {...props} />
-  )
-}
-
 function CodeCardBody({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -75,4 +69,4 @@ function CodeCardBody({ className, ...props }: React.ComponentProps<'div'>) {
   )
 }
 
-export { CodeCard, CodeCardBody, CodeCardHeader, CodeCardIcon, CodeCardSubtitle, CodeCardTitle }
+export { CodeCard, CodeCardBody, CodeCardHeader, CodeCardIcon, CodeCardTitle }

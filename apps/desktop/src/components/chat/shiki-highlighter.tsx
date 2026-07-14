@@ -9,7 +9,6 @@ import {
   CodeCardBody,
   CodeCardHeader,
   CodeCardIcon,
-  CodeCardSubtitle,
   CodeCardTitle
 } from '@/components/chat/code-card'
 import { ExpandableBlock } from '@/components/chat/expandable-block'
@@ -143,8 +142,7 @@ export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
       <CodeCardHeader>
         <CodeCardTitle>
           <CodeCardIcon name={codiconForLanguage(label)} />
-          {t.assistant.tool.code}
-          {label && <CodeCardSubtitle> · {label}</CodeCardSubtitle>}
+          {label || t.assistant.tool.code}
         </CodeCardTitle>
         <CopyButton
           appearance="inline"
