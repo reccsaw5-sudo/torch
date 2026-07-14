@@ -158,15 +158,22 @@ function ToolGlyph({
   copy,
   filePath,
   icon,
+  shell,
   status
 }: {
   copy: ToolStatusCopy
   filePath?: string
   icon?: string
+  shell?: boolean
   status?: ToolStatus
 }) {
   const node = status ? (
     statusGlyph(status, copy)
+  ) : shell ? (
+    // Codex-style shell prompt marker for terminal / execute_code steps.
+    <span className="font-mono text-[0.8125rem] font-semibold leading-none text-emerald-600/80 dark:text-emerald-400/80">
+      $
+    </span>
   ) : filePath ? (
     <FileTypeIcon className="text-(--ui-text-tertiary)" path={filePath} size="0.875rem" />
   ) : icon ? (
@@ -219,11 +226,13 @@ function LinkifiedText({ className, text }: { className?: string; text: string }
 
 function ToolTitle({
   isPending,
+  mono,
   status,
   title,
   titleAction
 }: {
   isPending: boolean
+  mono?: boolean
   status: ToolStatus
   title: string
   titleAction?: ToolTitleAction
@@ -232,6 +241,8 @@ function ToolTitle({
     <FadeText
       className={cn(
         TOOL_HEADER_TITLE_CLASS,
+        // Codex-style: terminal / code steps read as monospace command lines.
+        mono && 'font-mono text-[0.75rem] font-normal',
         isPending && 'text-(--ui-text-tertiary)',
         status === 'error' && 'text-destructive',
         status === 'warning' && 'text-amber-700 dark:text-amber-300'
@@ -287,6 +298,7 @@ function ToolEntry({ part }: ToolEntryProps) {
   const sideDiff = toolCallId ? liveDiffs[toolCallId] || '' : ''
   const inlineDiff = stripInlineDiffChrome(sideDiff) || inlineDiffFromResult(result)
   const isFileEdit = isFileEditTool(toolName)
+  const isShell = toolName === 'terminal' || toolName === 'execute_code'
   const defaultOpen = Boolean(inlineDiff)
   const open = useDisclosureOpen(disclosureId, defaultOpen)
   const canDismiss = !isPending && !embedded
@@ -460,9 +472,16 @@ function ToolEntry({ part }: ToolEntryProps) {
               copy={copy}
               filePath={isFileEdit ? view.subtitle : undefined}
               icon={view.icon}
+              shell={isShell && !isFileEdit}
               status={leadingStatus(isPending, view.status)}
             />
-            <ToolTitle isPending={isPending} status={view.status} title={view.title} titleAction={view.titleAction} />
+            <ToolTitle
+              isPending={isPending}
+              mono={isShell}
+              status={view.status}
+              title={view.title}
+              titleAction={view.titleAction}
+            />
             {!isPending && view.countLabel && <span className={TOOL_HEADER_DURATION_CLASS}>{view.countLabel}</span>}
             {showDiffStats && diffStats && (
               <span className="flex shrink-0 items-center gap-1 font-mono text-[0.625rem] tabular-nums">
@@ -698,7 +717,7 @@ export const ToolGroupSlot: FC<PropsWithChildren<{ endIndex: number; startIndex:
           onScroll={bounded ? onScroll : undefined}
           ref={scrollRef}
         >
-          <div className="grid min-w-0 max-w-full gap-(--tool-row-gap)" ref={contentRef}>
+          <div className="tool-step-rail grid min-w-0 max-w-full gap-(--tool-row-gap)" ref={contentRef}>
             {children}
           </div>
         </div>

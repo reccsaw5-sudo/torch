@@ -1401,6 +1401,27 @@ text-* variant utilities. */ .btn-arc {
   opacity: 1;
 }
 
+/* Codex-style step connector: a hairline threading the leading status/glyph
+   column, so a multi-step tool run reads as connected "steps". Drawn as a
+   pseudo behind the rows (no left padding) so it never shifts row alignment.
+   Only appears when there are ≥2 rows (`:has` sibling test); the line sits at
+   the centre of the 0.875rem glyph column so the status dots read as nodes. */
+.tool-step-rail {
+  position: relative;
+}
+
+.tool-step-rail:has([data-tool-row] ~ [data-tool-row])::before {
+  content: '';
+  position: absolute;
+  left: 0.4375rem;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  width: 1px;
+  background: var(--ui-stroke-tertiary);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
 /* Conversation block rhythm. assistant-ui renders each range as a direct child
    of the message content with no per-part wrapper, so adjacency rules cover
    every pairing — first block needs no reset, nested tool rows are untouched.
