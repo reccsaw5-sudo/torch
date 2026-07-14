@@ -6,6 +6,7 @@
 import { atom } from 'nanostores'
 
 import type {
+  DesktopAppUpdateStatus,
   DesktopUpdateApplyOptions,
   DesktopUpdateApplyResult,
   DesktopUpdateProgress,
@@ -47,6 +48,10 @@ export const $updateApply = atom<UpdateApplyState>(IDLE)
 export const $updateChecking = atom<boolean>(false)
 export const $updateOverlayOpen = atom<boolean>(false)
 export const $updateStatus = atom<DesktopUpdateStatus | null>(null)
+// Latest packaged-shell (installer) check result. Populated by
+// checkAppShellUpdate so the manual "check for updates" dialog can surface a
+// downloadable new UI build even when the kernel is already up to date.
+export const $appShellUpdate = atom<DesktopAppUpdateStatus | null>(null)
 
 // Client and backend are independently updatable; each keeps its own state.
 export const $backendUpdateStatus = atom<DesktopUpdateStatus | null>(null)
@@ -213,27 +218,32 @@ function isAppUpdateToastSnoozed(): boolean {
   return Number.isFinite(until) && Date.now() < until
 }
 
-export async function checkAppShellUpdate(): Promise<void> {
+export async function checkAppShellUpdate(): Promise<DesktopAppUpdateStatus | null> {
   const bridge = window.hermesDesktop?.updates
 
   if (!bridge?.appCheck) {
-    return
+    return null
   }
 
-  let status
+  let status: DesktopAppUpdateStatus
 
   try {
     status = await bridge.appCheck()
   } catch {
-    return
+    return null
   }
 
+  // Publish for the updates overlay: the manual "check for updates" dialog reads
+  // this so a kernel-up-to-date result can still show a downloadable new UI build
+  // inline (not only via the ambient, snoozeable toast below).
+  $appShellUpdate.set(status)
+
   if (!status?.updateAvailable || !status.downloadUrl) {
-    return
+    return status
   }
 
   if (isAppUpdateToastSnoozed()) {
-    return
+    return status
   }
 
   const downloadUrl = status.downloadUrl
@@ -254,6 +264,8 @@ export async function checkAppShellUpdate(): Promise<void> {
     onDismiss: () => snoozeAppUpdateToast(),
     title: translateNow('notifications.appUpdateTitle')
   })
+
+  return status
 }
 
 export function openUpdatesWindow(): void {

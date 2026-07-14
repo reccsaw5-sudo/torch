@@ -7,13 +7,14 @@ import { writeClipboardText } from '@/components/ui/copy-button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { ErrorIcon, ErrorState } from '@/components/ui/error-state'
 import { Loader } from '@/components/ui/loader'
-import type { DesktopUpdateCommit, DesktopUpdateStage, DesktopUpdateStatus } from '@/global'
+import type { DesktopAppUpdateStatus, DesktopUpdateCommit, DesktopUpdateStage, DesktopUpdateStatus } from '@/global'
 import { useI18n } from '@/i18n'
 import { buildCommitChangelog, type CommitGroup } from '@/lib/commit-changelog'
 import { AlertCircle, Check, Copy, Terminal } from '@/lib/icons'
 import { resolveUpdateCopy, type UpdateTarget } from '@/lib/update-copy'
 import { cn } from '@/lib/utils'
 import {
+  $appShellUpdate,
   $backendUpdateApply,
   $backendUpdateChecking,
   $backendUpdateStatus,
@@ -24,6 +25,7 @@ import {
   $updateStatus,
   applyBackendUpdate,
   applyUpdates,
+  checkAppShellUpdate,
   checkBackendUpdates,
   checkUpdates,
   resetUpdateApplyState,
@@ -45,6 +47,7 @@ export function UpdatesOverlay() {
   const backendStatus = useStore($backendUpdateStatus)
   const backendChecking = useStore($backendUpdateChecking)
   const backendApply = useStore($backendUpdateApply)
+  const appShell = useStore($appShellUpdate)
 
   const isBackend = target === 'backend'
   const status = isBackend ? backendStatus : clientStatus
@@ -58,6 +61,16 @@ export function UpdatesOverlay() {
       void check()
     }
   }, [check, checking, open, status])
+
+  // When the client "check for updates" dialog opens, also probe the packaged
+  // shell (installer) on the download manifest, so a kernel-up-to-date result
+  // still surfaces a downloadable new UI build in the same dialog — the two
+  // update tracks (git kernel vs packaged .exe) now answer one button.
+  useEffect(() => {
+    if (open && !isBackend) {
+      void checkAppShellUpdate()
+    }
+  }, [open, isBackend])
 
   const behind = status?.behind ?? 0
   const updateAvailable = status?.updateAvailable || behind > 0
@@ -109,6 +122,7 @@ export function UpdatesOverlay() {
 
         {phase === 'idle' && (
           <IdleView
+            appShell={appShell}
             behind={behind}
             checking={checking}
             commits={status?.commits ?? []}
@@ -126,6 +140,7 @@ export function UpdatesOverlay() {
 }
 
 function IdleView({
+  appShell,
   behind,
   checking,
   commits,
@@ -136,6 +151,7 @@ function IdleView({
   target,
   updateAvailable
 }: {
+  appShell: DesktopAppUpdateStatus | null
   behind: number
   checking: boolean
   commits: readonly DesktopUpdateCommit[]
@@ -198,6 +214,38 @@ function IdleView({
   }
 
   if (!updateAvailable) {
+    // Kernel is current, but the packaged UI shell (.exe) may still have a newer
+    // build on the download manifest — shell updates ship as a fresh installer,
+    // not a git pull. Surface it here with a download button so one "check for
+    // updates" answers both tracks. Only for the client target.
+    if (target === 'client' && appShell?.updateAvailable && appShell.downloadUrl) {
+      const downloadUrl = appShell.downloadUrl
+
+      return (
+        <div className="grid gap-5 px-6 pb-6 pt-7 pr-8">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <BrandMark className="size-16" />
+
+            <DialogTitle className="text-center text-xl">{t.notifications.appUpdateTitle}</DialogTitle>
+            <DialogDescription className="text-center text-sm">{t.notifications.appUpdateMessage}</DialogDescription>
+          </div>
+
+          <div className="grid gap-2">
+            <Button
+              className="font-semibold"
+              onClick={() => void window.hermesDesktop?.openExternal?.(downloadUrl)}
+              size="lg"
+            >
+              {t.notifications.appUpdateDownload}
+            </Button>
+            <Button className="font-medium" onClick={onLater} type="button" variant="text">
+              {u.maybeLater}
+            </Button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <CenteredStatus
         body={target === 'backend' ? u.latestBodyBackend : u.latestBody}
