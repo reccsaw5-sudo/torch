@@ -1145,14 +1145,16 @@ export function ChatSidebar({
     <Sidebar
       className={cn(
         'relative h-full min-w-0 overflow-hidden border-t-0 border-b-0 text-foreground transition-none',
+        // Frosted-glass skin (Codex-style): translucent tint + backdrop blur.
+        'backdrop-blur-[1rem] backdrop-saturate-[1.1] [-webkit-backdrop-filter:blur(1rem)_saturate(1.1)]',
         panesFlipped ? 'border-l border-r-0' : 'border-r border-l-0',
         sidebarOpen
-          ? 'border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background) opacity-100'
+          ? 'border-(--sidebar-edge-border) bg-(--sidebar-frost-background) opacity-100'
           : 'pointer-events-none border-transparent bg-transparent opacity-0',
         // While floated by PaneShell's hover-reveal, force visible + interactive
         // — on hover (group-hover/reveal) or when keyboard-pinned (data-forced).
-        'in-data-[pane-hover-reveal=open]:pointer-events-auto in-data-[pane-hover-reveal=open]:border-(--sidebar-edge-border) in-data-[pane-hover-reveal=open]:bg-(--ui-sidebar-surface-background) in-data-[pane-hover-reveal=open]:opacity-100',
-        'group-hover/reveal:pointer-events-auto group-hover/reveal:border-(--sidebar-edge-border) group-hover/reveal:bg-(--ui-sidebar-surface-background) group-hover/reveal:opacity-100'
+        'in-data-[pane-hover-reveal=open]:pointer-events-auto in-data-[pane-hover-reveal=open]:border-(--sidebar-edge-border) in-data-[pane-hover-reveal=open]:bg-(--sidebar-frost-background) in-data-[pane-hover-reveal=open]:opacity-100',
+        'group-hover/reveal:pointer-events-auto group-hover/reveal:border-(--sidebar-edge-border) group-hover/reveal:bg-(--sidebar-frost-background) group-hover/reveal:opacity-100'
       )}
       collapsible="none"
     >

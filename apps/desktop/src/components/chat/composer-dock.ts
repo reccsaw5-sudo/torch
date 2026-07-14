@@ -10,7 +10,7 @@ export const composerFill = 'bg-(--composer-fill)'
 /** Backdrop treatment for the composer input surface. Harmless when the fill
  *  goes opaque (drawer open) — nothing shows through to blur. */
 export const composerSurfaceGlass = cn(
-  'backdrop-blur-[0.75rem] backdrop-saturate-[1.12] [-webkit-backdrop-filter:blur(0.75rem)_saturate(1.12)]',
+  'backdrop-blur-[1rem] backdrop-saturate-[1.18] [-webkit-backdrop-filter:blur(1rem)_saturate(1.18)]',
   'transition-[background-color] duration-150 ease-out'
 )
 
