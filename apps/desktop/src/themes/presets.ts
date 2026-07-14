@@ -20,75 +20,68 @@ const SYSTEM_MONO =
 
 export const DEFAULT_TYPOGRAPHY: DesktopThemeTypography = { fontSans: SYSTEM_SANS, fontMono: SYSTEM_MONO }
 
-const NOUS_BLUE = '#0053FD'
-const PSYCHE_BLUE = '#1540B1'
-const PSYCHE_WARM = '#FFE6CB'
-
-const nousTint = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, #FFFFFF)`
-const nousTintTransparent = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, transparent)`
-
 /**
- * Nous — canonical Hermes desktop identity. The palette keeps the current
- * glass geometry neutral, then lets the old bb/gui blue and psyche cream
- * return as accent seeds.
+ * Torch — Codex-style clean workspace. Neutral white/gray surfaces, near-black
+ * text and primary action, subtle hairline borders; no colored brand tint. The
+ * dark palette mirrors it in neutral graphite so toggling mode stays coherent.
  */
 export const nousTheme: DesktopTheme = {
   name: 'nous',
-  label: 'Nous',
-  description: 'Glass neutrals with Nous blue accents',
+  label: 'Torch',
+  description: 'Clean light workspace',
   colors: {
-    background: '#F8FAFF',
-    foreground: '#17171A',
+    background: '#FFFFFF',
+    foreground: '#0D0D0D',
     card: '#FFFFFF',
-    cardForeground: '#17171A',
-    muted: nousTint(5),
-    mutedForeground: '#666678',
+    cardForeground: '#0D0D0D',
+    muted: '#F7F7F8',
+    mutedForeground: '#8E8EA0',
     popover: '#FFFFFF',
-    popoverForeground: '#17171A',
-    primary: NOUS_BLUE,
-    primaryForeground: '#FCFCFC',
-    secondary: nousTint(7),
-    secondaryForeground: '#242432',
-    accent: nousTint(10),
-    accentForeground: '#202030',
-    border: nousTintTransparent(22),
-    input: nousTintTransparent(30),
-    ring: NOUS_BLUE,
-    midground: NOUS_BLUE,
-    composerRing: NOUS_BLUE,
-    destructive: '#C72E4D',
+    popoverForeground: '#0D0D0D',
+    primary: '#0D0D0D',
+    primaryForeground: '#FFFFFF',
+    secondary: '#F4F4F5',
+    secondaryForeground: '#242428',
+    accent: '#F0F0F1',
+    accentForeground: '#242428',
+    border: '#E5E5E7',
+    input: '#E3E3E6',
+    ring: '#8E8EA0',
+    midground: '#0D0D0D',
+    composerRing: '#D9D9E3',
+    destructive: '#E5484D',
     destructiveForeground: '#FFFFFF',
-    sidebarBackground: '#F3F7FF',
-    sidebarBorder: nousTintTransparent(18),
-    userBubble: nousTint(6),
-    userBubbleBorder: nousTintTransparent(24)
+    sidebarBackground: '#F9F9F9',
+    sidebarBorder: '#ECECEE',
+    userBubble: '#F4F4F5',
+    userBubbleBorder: '#E5E5E7'
   },
   darkColors: {
-    background: '#0D2F86',
-    foreground: PSYCHE_WARM,
-    card: '#12378F',
-    cardForeground: PSYCHE_WARM,
-    muted: '#183F9A',
-    mutedForeground: '#B5C7F3',
-    popover: '#123A96',
-    popoverForeground: PSYCHE_WARM,
-    primary: PSYCHE_WARM,
-    primaryForeground: '#0D2F86',
-    secondary: '#1B45A4',
-    secondaryForeground: '#E0E8FF',
-    accent: PSYCHE_BLUE,
-    accentForeground: '#F0F4FF',
-    border: '#3158AD',
-    input: '#0B2566',
-    ring: PSYCHE_WARM,
-    midground: NOUS_BLUE,
-    composerRing: PSYCHE_WARM,
-    destructive: '#C0473A',
-    destructiveForeground: '#FEF2F2',
-    sidebarBackground: '#09286F',
-    sidebarBorder: '#234A9C',
-    userBubble: '#143B91',
-    userBubbleBorder: '#3A63BD'
+    background: '#212121',
+    foreground: '#ECECEC',
+    card: '#2A2A2A',
+    cardForeground: '#ECECEC',
+    muted: '#2E2E2E',
+    mutedForeground: '#9B9B9B',
+    popover: '#2A2A2A',
+    popoverForeground: '#ECECEC',
+    primary: '#ECECEC',
+    primaryForeground: '#0D0D0D',
+    secondary: '#2E2E2E',
+    secondaryForeground: '#D4D4D4',
+    accent: '#2E2E2E',
+    accentForeground: '#D4D4D4',
+    border: '#3A3A3A',
+    input: '#3A3A3A',
+    ring: '#8E8EA0',
+    midground: '#ECECEC',
+    composerRing: '#4A4A4A',
+    destructive: '#E5484D',
+    destructiveForeground: '#FFFFFF',
+    sidebarBackground: '#171717',
+    sidebarBorder: '#2F2F2F',
+    userBubble: '#2A2A2A',
+    userBubbleBorder: '#3A3A3A'
   },
   typography: {
     fontSans: SYSTEM_SANS,
