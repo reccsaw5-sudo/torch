@@ -1800,6 +1800,13 @@ export const zh: Translations = {
       ageDay: '天',
       ageHour: '时',
       ageMin: '分'
+    },
+    dateGroups: {
+      today: '今天',
+      yesterday: '昨天',
+      previous7: '过去 7 天',
+      previous30: '过去 30 天',
+      older: '更早'
     }
   },
 

@@ -1334,6 +1334,7 @@ export function ChatSidebar({
                   // virtualized long list, which must keep its own scroller.
                   !recentsVirtualizes && COMPACT_FLAT
                 )}
+                dateGrouped={!showAllProfiles && !worktreeGroupingActive && !inProject}
                 dndSensors={dndSensors}
                 emptyState={
                   showSessionSkeletons ? (

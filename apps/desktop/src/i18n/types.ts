@@ -1350,6 +1350,13 @@ export interface Translations {
       ageHour: string
       ageMin: string
     }
+    dateGroups: {
+      today: string
+      yesterday: string
+      previous7: string
+      previous30: string
+      older: string
+    }
   }
 
   composer: {

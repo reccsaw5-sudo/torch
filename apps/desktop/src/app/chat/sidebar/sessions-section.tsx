@@ -7,7 +7,9 @@ import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { SidebarGroup, SidebarGroupContent } from '@/components/ui/sidebar'
 import type { HermesGitWorktree } from '@/global'
 import type { SessionInfo } from '@/hermes'
+import { useI18n } from '@/i18n'
 import { flattenSessionsWithBranches } from '@/lib/session-branch-tree'
+import { sessionDateBucket, type SessionDateBucket } from '@/lib/session-date-groups'
 import { cn } from '@/lib/utils'
 import { sessionPinId } from '@/store/session'
 
@@ -127,6 +129,11 @@ interface SidebarSessionsSectionProps {
   // When false the section header is static (no caret/toggle) and always open.
   collapsible?: boolean
   sortable?: boolean
+  // Codex-style: split the flat recents list into date buckets (Today /
+  // Yesterday / Previous 7 Days / …). Mutually exclusive with manual reorder
+  // and virtualization — a date-ordered list can't be hand-reordered, so when
+  // on we force the static flat path.
+  dateGrouped?: boolean
   // The flat session list is the only hand-reorderable surface (grouped/project
   // views sort deterministically), so it owns the one ReorderableList.
   onReorderSessions?: (ids: string[]) => void
@@ -171,11 +178,13 @@ export function SidebarSessionsSection({
   labelIcon,
   collapsible = true,
   sortable = false,
+  dateGrouped = false,
   onReorderSessions,
   onReorderProjects,
   projectBackRow,
   dndSensors
 }: SidebarSessionsSectionProps) {
+  const { t } = useI18n()
   const sectionOpen = collapsible ? open : true
   const hasGroupedSessions = Boolean(groups?.some(group => group.sessions.length > 0))
   // A defined project list is itself content (even an empty project should
@@ -187,8 +196,9 @@ export function SidebarSessionsSection({
     forceEmptyState || (!hasGroupedSessions && !hasProjectOverview && !hasProjectContent && sessions.length === 0)
 
   // The flat recents/pinned list is the only place sessions reorder by hand;
-  // grouped/tree views always sort by creation date and never drag.
-  const sessionsDraggable = sortable && !!onReorderSessions
+  // grouped/tree views always sort by creation date and never drag. Date
+  // grouping is deterministic order, so it disables manual reorder too.
+  const sessionsDraggable = sortable && !!onReorderSessions && !dateGrouped
   const displayEntries = useMemo(() => flattenSessionsWithBranches(sessions), [sessions])
 
   const renderRow = (session: SessionInfo, draggable: boolean, branchStem?: string) => {
@@ -222,6 +232,7 @@ export function SidebarSessionsSection({
     !groups?.length &&
     !projectOverview?.length &&
     !projectContent &&
+    !dateGrouped &&
     sessions.length >= VIRTUALIZE_THRESHOLD
 
   // First paint into the grouped view (e.g. the app restoring the Projects tab)
@@ -330,6 +341,39 @@ export function SidebarSessionsSection({
         {displayEntries.map(({ branchStem, session }) => renderRow(session, true, branchStem))}
       </ReorderableList>
     )
+  } else if (dateGrouped) {
+    // Codex-style date buckets. The list is already newest-first, so buckets
+    // are contiguous — emit a muted header before the first row of each new
+    // bucket. Branch children inherit their parent's bucket (no header).
+    const now = Date.now()
+    const labels = t.sidebar.dateGroups
+
+    const bucketLabel: Record<SessionDateBucket, string> = {
+      older: labels.older,
+      previous7: labels.previous7,
+      previous30: labels.previous30,
+      today: labels.today,
+      yesterday: labels.yesterday
+    }
+
+    let lastBucket: null | SessionDateBucket = null
+
+    inner = displayEntries.flatMap(({ branchStem, session }) => {
+      const nodes: React.ReactNode[] = []
+
+      if (!branchStem) {
+        const bucket = sessionDateBucket(session, now)
+
+        if (bucket !== lastBucket) {
+          lastBucket = bucket
+          nodes.push(<SessionDateHeader key={`date-${bucket}`} label={bucketLabel[bucket]} />)
+        }
+      }
+
+      nodes.push(renderRow(session, false, branchStem))
+
+      return nodes
+    })
   } else {
     inner = displayEntries.map(({ branchStem, session }) => renderRow(session, false, branchStem))
   }
@@ -372,6 +416,15 @@ interface SortableSessionRowProps {
 
 function SortableSidebarSessionRow(props: SortableSessionRowProps) {
   return <SidebarSessionRow {...props} {...useSortableBindings(props.session.id)} />
+}
+
+// Muted date-bucket header for the Codex-style grouped recents list.
+function SessionDateHeader({ label }: { label: string }) {
+  return (
+    <div className="select-none px-2 pb-0.5 pt-2.5 text-[0.6875rem] font-medium text-(--ui-text-quaternary) first:pt-0.5">
+      {label}
+    </div>
+  )
 }
 
 function SortableProjectOverviewRow(props: React.ComponentProps<typeof ProjectOverviewRow>) {

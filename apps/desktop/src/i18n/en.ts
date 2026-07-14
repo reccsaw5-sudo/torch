@@ -1625,6 +1625,13 @@ export const en: Translations = {
       ageDay: 'd',
       ageHour: 'h',
       ageMin: 'm'
+    },
+    dateGroups: {
+      today: 'Today',
+      yesterday: 'Yesterday',
+      previous7: 'Previous 7 Days',
+      previous30: 'Previous 30 Days',
+      older: 'Older'
     }
   },
 

@@ -149,7 +149,10 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
                     }}
                   >
                     {active && (
-                      <span aria-hidden="true" className="absolute inset-x-0 top-0 h-px bg-(--ui-stroke-primary)" />
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-(--ui-text-secondary)"
+                      />
                     )}
                     <Tip label={tab.target.path || tab.target.url || tab.label}>
                       <button
