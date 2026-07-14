@@ -7,6 +7,10 @@ import { $paneStates, ensurePaneRegistered, setPaneOpen, setPaneWidthOverride, t
 
 export const SIDEBAR_DEFAULT_WIDTH = 237
 export const SIDEBAR_MAX_WIDTH = 360
+// Collapsed width: instead of hiding, the sessions sidebar docks as a slim
+// QQ-style icon rail (logo + nav icons + account avatar). Wide enough to clear
+// the macOS traffic lights that float over the top-left.
+export const SIDEBAR_RAIL_WIDTH = 64
 // Open at the same width as the sessions sidebar so the two rails match, but
 // allow shrinking well below that (~30% under the old 14rem floor) for users who
 // want a narrow tree.

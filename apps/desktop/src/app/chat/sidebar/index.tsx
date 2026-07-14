@@ -238,6 +238,7 @@ function NavRowButton({
       aria-disabled={!isInteractive}
       className={cn(
         NAV_BUTTON_BASE,
+        !contentVisible && 'justify-center px-0',
         isChild && 'text-(--ui-text-tertiary)',
         active && NAV_BUTTON_ACTIVE,
         !isInteractive && 'cursor-default hover:border-transparent hover:bg-transparent hover:text-inherit'
@@ -1148,13 +1149,10 @@ export function ChatSidebar({
         // Frosted-glass skin (Codex-style): translucent tint + backdrop blur.
         'backdrop-blur-[1rem] backdrop-saturate-[1.1] [-webkit-backdrop-filter:blur(1rem)_saturate(1.1)]',
         panesFlipped ? 'border-l border-r-0' : 'border-r border-l-0',
-        sidebarOpen
-          ? 'border-(--sidebar-edge-border) bg-(--sidebar-frost-background) opacity-100'
-          : 'pointer-events-none border-transparent bg-transparent opacity-0',
-        // While floated by PaneShell's hover-reveal, force visible + interactive
-        // — on hover (group-hover/reveal) or when keyboard-pinned (data-forced).
-        'in-data-[pane-hover-reveal=open]:pointer-events-auto in-data-[pane-hover-reveal=open]:border-(--sidebar-edge-border) in-data-[pane-hover-reveal=open]:bg-(--sidebar-frost-background) in-data-[pane-hover-reveal=open]:opacity-100',
-        'group-hover/reveal:pointer-events-auto group-hover/reveal:border-(--sidebar-edge-border) group-hover/reveal:bg-(--sidebar-frost-background) group-hover/reveal:opacity-100'
+        // Always visible: when collapsed the pane docks as a slim rail (PaneShell
+        // railWidth) rather than hiding, so the sidebar keeps painting its frost
+        // surface + icon rail instead of fading out.
+        'border-(--sidebar-edge-border) bg-(--sidebar-frost-background) opacity-100'
       )}
       collapsible="none"
     >
@@ -1538,10 +1536,14 @@ export function ChatSidebar({
 
         {contentVisible && !showSessionSections && <SidebarBlankState onNewProject={openProjectCreate} />}
 
-        {contentVisible && (
+        {contentVisible ? (
           <div className="shrink-0 space-y-1 px-0.5 pb-1 pt-0.5">
             <TorchAccountRail />
             <ProfileRail />
+          </div>
+        ) : (
+          <div className="mt-auto grid shrink-0 place-items-center px-0 pb-2 pt-1">
+            <TorchAccountRail collapsed />
           </div>
         )}
       </SidebarContent>

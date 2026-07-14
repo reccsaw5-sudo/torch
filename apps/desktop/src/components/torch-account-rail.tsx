@@ -8,8 +8,9 @@ import { $torchLogin, logoutTorch } from '@/store/torch-login'
 import { TorchProfileDialog } from './torch-profile-dialog'
 
 // Sidebar footer account block: who's logged in and logout. Renders nothing
-// when logged out (the login gate owns that state).
-export function TorchAccountRail() {
+// when logged out (the login gate owns that state). `collapsed` renders just the
+// avatar button for the slim QQ-style icon rail.
+export function TorchAccountRail({ collapsed = false }: { collapsed?: boolean }) {
   const { session } = useStore($torchLogin)
   const [profileOpen, setProfileOpen] = useState(false)
 
@@ -24,6 +25,22 @@ export function TorchAccountRail() {
     if (window.confirm('确定退出登录？')) {
       logoutTorch()
     }
+  }
+
+  if (collapsed) {
+    return (
+      <>
+        <button
+          className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/15 text-[0.8125rem] font-semibold text-primary transition-colors [-webkit-app-region:no-drag] hover:bg-primary/25"
+          onClick={() => setProfileOpen(true)}
+          title={label}
+          type="button"
+        >
+          {initial}
+        </button>
+        <TorchProfileDialog onOpenChange={setProfileOpen} open={profileOpen} />
+      </>
+    )
   }
 
   return (

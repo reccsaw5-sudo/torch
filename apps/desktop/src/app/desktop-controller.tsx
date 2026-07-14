@@ -39,6 +39,7 @@ import {
   setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
+  SIDEBAR_RAIL_WIDTH,
   unpinSession
 } from '../store/layout'
 import { respondToApprovalAction } from '../store/native-notifications'
@@ -1318,11 +1319,11 @@ export function DesktopController() {
       {!isSecondaryWindow() && (
         <Pane
           forceCollapsed={narrowViewport}
-          hoverReveal
           id="chat-sidebar"
           maxWidth={SIDEBAR_MAX_WIDTH}
           minWidth={SIDEBAR_DEFAULT_WIDTH}
           onOverlayActiveChange={setSidebarOverlayMounted}
+          railWidth={`${SIDEBAR_RAIL_WIDTH}px`}
           resizable
           side={sidebarSide}
           width={`${SIDEBAR_DEFAULT_WIDTH}px`}

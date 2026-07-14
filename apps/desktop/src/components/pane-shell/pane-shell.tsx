@@ -56,6 +56,14 @@ export interface PaneProps {
   id: string
   maxWidth?: WidthValue
   minWidth?: WidthValue
+  /**
+   * When collapsed, dock the pane as an interactive narrow rail of this width
+   * instead of hiding it (track→0). QQ-style: the sidebar keeps a slim
+   * icon/logo/avatar rail visible when its content is collapsed. Mutually
+   * exclusive with `hoverReveal` (railWidth wins). Only the pane that sets it
+   * changes behavior; every other pane is unaffected.
+   */
+  railWidth?: WidthValue
   resizable?: boolean
   side: PaneSide
   width?: WidthValue
@@ -79,6 +87,7 @@ interface CollectedPane {
   forceCollapsed: boolean
   height: string
   id: string
+  railWidth: string
   resizable: boolean
   side: PaneSide
   width: string
@@ -197,6 +206,7 @@ function collectPanes(children: ReactNode) {
       forceCollapsed: props.forceCollapsed ?? false,
       height: widthToCss(props.height, DEFAULT_HEIGHT),
       id: props.id,
+      railWidth: props.railWidth === undefined ? '' : widthToCss(props.railWidth, DEFAULT_WIDTH),
       resizable: props.resizable ?? false,
       side: props.side,
       width: widthToCss(props.width, DEFAULT_WIDTH)
@@ -220,7 +230,8 @@ function trackForPane(pane: CollectedPane, states: PaneStoreState) {
   const open = paneIsOpen(pane, states)
 
   if (!open) {
-    return { open: false, track: '0px' }
+    // Collapsed: dock as a narrow rail when railWidth is set, else hide (0px).
+    return { open: false, track: pane.railWidth || '0px' }
   }
 
   const override = pane.resizable ? states[pane.id]?.widthOverride : undefined
@@ -350,6 +361,7 @@ export function Pane({
   maxWidth,
   minWidth,
   onOverlayActiveChange,
+  railWidth,
   resizable = false,
   width
 }: PaneProps) {
@@ -363,9 +375,13 @@ export function Pane({
   const slot = ctx?.paneById.get(id)
   const open = Boolean(slot?.open && !disabled)
   const side = slot?.side ?? 'left'
+  // Collapsed but docked as a narrow interactive rail (railWidth) — keep it
+  // visible + clickable rather than hiding it or floating an overlay.
+  const railDocked = !open && !disabled && railWidth !== undefined
   // Collapsed + hoverReveal: float the pane contents over the main column on
   // hover/focus instead of hiding them. Honors any persisted resize width.
-  const overlayActive = !open && hoverReveal && !disabled
+  // railWidth wins over hoverReveal when both are (mistakenly) set.
+  const overlayActive = !open && hoverReveal && railWidth === undefined && !disabled
   const override = resizable ? paneStates[id]?.widthOverride : undefined
 
   // Overlay width: an explicit `overlayWidth` (e.g. min width on mobile) wins,
@@ -536,10 +552,15 @@ export function Pane({
 
   return (
     <div
-      aria-hidden={!open}
-      className={cn('relative min-h-0 min-w-0 overflow-hidden', !open && 'pointer-events-none', className)}
+      aria-hidden={!open && !railDocked}
+      className={cn(
+        'relative min-h-0 min-w-0 overflow-hidden',
+        !open && !railDocked && 'pointer-events-none',
+        className
+      )}
       data-pane-id={id}
       data-pane-open={open ? 'true' : 'false'}
+      data-pane-rail={railDocked ? '' : undefined}
       data-pane-side={slot.side}
       ref={paneRef}
       style={{ gridColumn: slot.gridColumn, gridRow: slot.gridRow }}
