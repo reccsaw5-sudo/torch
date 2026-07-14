@@ -1920,11 +1920,62 @@ async function ensureGiteeOrigin(updateRoot) {
   }
 }
 
+// Filesystem ".git exists" is a false positive: an interrupted clone behind the
+// GFW leaves a partial/empty .git dir that git itself rejects ("fatal: not a
+// git repository"), so every later fetch/rev-parse fails with a scary raw error
+// instead of the friendly "not a git checkout" branch. Ask git directly.
+async function isValidGitRepo(updateRoot) {
+  const r = await runGit(['rev-parse', '--is-inside-work-tree'], { cwd: updateRoot })
+  return r.code === 0 && r.stdout.trim() === 'true'
+}
+
+// Adopt a runtime dir that has the kernel files but a missing/corrupt .git into
+// a real checkout of our Gitee fork, in place — so self-update works again
+// without a full reinstall. Gated to a verified kernel root (has
+// hermes_cli/main.py) so the destructive .git reset can never touch an
+// unexpected directory. Shallow (--depth 1) to stay fast on slow China links;
+// the check/apply paths already handle shallow repos. Untracked files (venv,
+// config) are left intact. Idempotent; any failure is non-fatal and reported.
+async function repairRuntimeGitRepo(updateRoot, branch) {
+  if (!isHermesSourceRoot(updateRoot)) {
+    return false
+  }
+  rememberLog(`[updates] 内核 .git 无效,就地重建为 Gitee fork: ${updateRoot}`)
+  try {
+    fs.rmSync(path.join(updateRoot, '.git'), { recursive: true, force: true })
+  } catch (err) {
+    rememberLog(`[updates] 清理损坏 .git 失败: ${err && err.message}`)
+  }
+  const steps = [
+    ['init'],
+    ['remote', 'add', 'origin', RUNTIME_MIRROR_GIT],
+    ['fetch', '--depth', '1', 'origin', branch],
+    ['checkout', '-f', '-B', branch, `origin/${branch}`]
+  ]
+  for (const args of steps) {
+    const r = await runGit(args, { cwd: updateRoot })
+    if (r.code !== 0) {
+      rememberLog(`[updates] 重建失败 git ${args.join(' ')}: ${firstLine(r.stderr)}`)
+      return false
+    }
+  }
+  rememberLog(`[updates] 内核 .git 重建成功 → origin/${branch}`)
+  return true
+}
+
+// True when updateRoot is (or was repaired into) a valid git checkout of our
+// fork. Callers fall back to a friendly "not a git checkout" message when false.
+async function ensureRuntimeGitRepo(updateRoot, branch) {
+  if (await isValidGitRepo(updateRoot)) {
+    return true
+  }
+  return repairRuntimeGitRepo(updateRoot, branch || DEFAULT_UPDATE_BRANCH)
+}
+
 async function checkUpdates() {
   const updateRoot = resolveUpdateRoot()
   let { branch } = readDesktopUpdateConfig()
-  const gitDir = path.join(updateRoot, '.git')
-  if (!directoryExists(gitDir)) {
+  if (!(await ensureRuntimeGitRepo(updateRoot, branch))) {
     return {
       supported: false,
       reason: 'not-a-git-checkout',
@@ -2253,7 +2304,9 @@ async function applyUpdates(opts = {}) {
     // prior check (e.g. "Update now"): the external updater / `hermes update`
     // pulls via the kernel's own .git/config, so the origin must already point
     // at our fork on Gitee (not the GFW-blocked upstream GitHub).
-    await ensureGiteeOrigin(resolveUpdateRoot())
+    const applyRoot = resolveUpdateRoot()
+    await ensureRuntimeGitRepo(applyRoot, readDesktopUpdateConfig().branch)
+    await ensureGiteeOrigin(applyRoot)
     const updater = resolveUpdaterBinary()
     if (!updater && !IS_WINDOWS) {
       // macOS/Linux drag-install: no staged Tauri hermes-setup. Unlike Windows
