@@ -104,6 +104,7 @@ import {
   ARTIFACTS_ROUTE,
   CLI_ROUTE,
   CRON_ROUTE,
+  EXPERTS_ROUTE,
   INSPIRATION_ROUTE,
   MEMORY_ROUTE,
   MESSAGING_ROUTE,
@@ -149,6 +150,12 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     label: '',
     icon: props => <Codicon name="robot" {...props} />,
     action: 'new-session'
+  },
+  {
+    id: 'experts',
+    label: '专家广场',
+    icon: props => <Codicon name="hubot" {...props} />,
+    route: EXPERTS_ROUTE
   },
   {
     id: 'inspiration',
@@ -202,6 +209,9 @@ function navActive(item: SidebarNavItem, currentView: AppView, routeSearch: stri
 
     case 'cron':
       return currentView === 'cron'
+
+    case 'experts':
+      return currentView === 'experts'
 
     case 'mcp':
       return currentView === 'skills' && routeSearch.includes('tab=mcp')
