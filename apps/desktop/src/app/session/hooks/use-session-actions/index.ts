@@ -7,6 +7,7 @@ import { useI18n } from '@/i18n'
 import { preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
 import { setSessionYolo } from '@/lib/yolo-session'
 import { clearQueuedPrompts } from '@/store/composer-queue'
+import { takePendingExpertPersona } from '@/store/experts'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
@@ -173,6 +174,9 @@ export function useSessionActions({
         const uiProvider = $currentProvider.get().trim()
         const uiEffort = $currentReasoningEffort.get().trim()
         const uiFast = $currentFastMode.get()
+        // Expert-plaza persona (#1) bound to this new chat, consumed once so it
+        // can't bleed into the next session. Kernel bakes it in at build time.
+        const persona = takePendingExpertPersona()
 
         const created = await requestGateway<SessionCreateResponse>('session.create', {
           cols: 96,
@@ -180,7 +184,8 @@ export function useSessionActions({
           ...(newChatProfile ? { profile: newChatProfile } : {}),
           ...(uiModel ? { model: uiModel, ...(uiProvider ? { provider: uiProvider } : {}) } : {}),
           ...(uiEffort ? { reasoning_effort: uiEffort } : {}),
-          ...(uiFast ? { fast: true } : {})
+          ...(uiFast ? { fast: true } : {}),
+          ...(persona ? { system_prompt: persona } : {})
         })
 
         const stored = created.stored_session_id ?? null

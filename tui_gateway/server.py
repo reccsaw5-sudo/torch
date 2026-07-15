@@ -1245,6 +1245,9 @@ def _start_agent_build(sid: str, session: dict) -> None:
                         kw["reasoning_config_override"] = reasoning
                     if (tier := current.get("create_service_tier_override")) is not None:
                         kw["service_tier_override"] = tier
+                    # Expert-plaza persona bound to THIS chat at session.create.
+                    if persona := current.get("create_system_prompt"):
+                        kw["system_prompt_override"] = persona
                 agent = _make_agent(sid, key, **kw)
             finally:
                 _clear_session_context(tokens)
@@ -4234,6 +4237,7 @@ def _make_agent(
     provider_override: str | None = None,
     reasoning_config_override: dict | None = None,
     service_tier_override: str | None = None,
+    system_prompt_override: str | None = None,
 ):
     from run_agent import AIAgent
 
@@ -4286,6 +4290,14 @@ def _make_agent(
             system_prompt = "\n\n".join(
                 part for part in (system_prompt, skills_prompt) if part
             ).strip()
+    # Per-session expert persona (desktop 专家广场 #1): a free-form system-prompt
+    # overlay chosen at session.create time. Merged into the ephemeral overlay
+    # BEFORE the first API call, so it becomes part of the stable cached prefix
+    # for the life of the conversation — no mid-conversation cache invalidation.
+    if system_prompt_override and str(system_prompt_override).strip():
+        system_prompt = "\n\n".join(
+            part for part in (system_prompt, str(system_prompt_override).strip()) if part
+        ).strip()
     # Prefer a per-session model override (set by a prior in-session /model
     # switch) over global config/env resolution. Resume-time stored sessions may
     # also pass scalar model/provider/runtime knobs from the persisted DB row.
@@ -4958,6 +4970,10 @@ def _(rid, params: dict) -> dict:
     # Only pin "fast" when explicitly requested; leaving it None lets the build
     # fall back to the profile default service tier rather than forcing normal.
     create_service_tier_override = "priority" if params.get("fast") else None
+    # Expert-plaza persona (#1): a free-form system-prompt overlay for THIS chat,
+    # applied at agent-build time (before the first API call → cache-safe). Never
+    # written to global config, so a persona can't leak into other sessions.
+    create_system_prompt = str(params.get("system_prompt") or "").strip() or None
 
     ready = threading.Event()
     now = time.time()
@@ -4987,6 +5003,7 @@ def _(rid, params: dict) -> dict:
             "model_override": session_model_override,
             "create_reasoning_override": create_reasoning_override,
             "create_service_tier_override": create_service_tier_override,
+            "create_system_prompt": create_system_prompt,
             "parent_session_id": parent_session_id,
             "pending_title": title or None,
             "profile_home": str(profile_home) if profile_home is not None else None,

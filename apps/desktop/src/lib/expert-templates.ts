@@ -34,6 +34,20 @@ export interface Expert {
   isNew?: boolean
 }
 
+// The persistent system-prompt overlay bound to a chat started from an expert
+// (#1). Prefer a server/authored `persona`; otherwise synthesize a clean role
+// prompt from name + intro so the assistant stays in-character for the whole
+// conversation (the `opener` remains the user's first message, not the persona).
+export function expertSystemPrompt(e: Expert): string {
+  const persona = (e.persona ?? '').trim()
+
+  if (persona) {
+    return persona
+  }
+
+  return `你现在的身份是「${e.name}」。${e.intro} 请在本次对话中始终保持这一专家身份,提供专业、准确、可执行的帮助;遇到超出该领域的问题时,也从该专家的视角审慎作答。`
+}
+
 export const EXPERT_CATEGORIES: ExpertCategory[] = [
   '一人公司',
   '金融投资',

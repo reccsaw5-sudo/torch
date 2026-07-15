@@ -6,10 +6,10 @@ import { useNavigate } from 'react-router-dom'
 import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
 import { NEW_CHAT_ROUTE } from '@/app/routes'
 import { Codicon } from '@/components/ui/codicon'
-import { type Expert, EXPERT_CATEGORIES } from '@/lib/expert-templates'
+import { type Expert, EXPERT_CATEGORIES, expertSystemPrompt } from '@/lib/expert-templates'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
-import { $favoriteExpertIds, toggleExpertFavorite } from '@/store/experts'
+import { $favoriteExpertIds, setPendingExpertPersona, toggleExpertFavorite } from '@/store/experts'
 import { $torchExperts, loadTorchExperts } from '@/store/torch-experts'
 
 import { PageSearchShell } from '../page-search-shell'
@@ -133,6 +133,10 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
 
   const use = (expert: Expert) => {
     triggerHaptic('selection')
+    // Bind the persona to the next-created session (#1): session.create ships it
+    // as `system_prompt`, so the kernel bakes it into this chat's overlay before
+    // the first API call (persistent for the whole conversation, cache-safe).
+    setPendingExpertPersona(expertSystemPrompt(expert))
     navigate(NEW_CHAT_ROUTE)
     // Deferred insert lands after the fresh composer mounts (same bus TorchHome
     // / startWorkSession use). setComposerDraft was a dead atom nothing reads.
