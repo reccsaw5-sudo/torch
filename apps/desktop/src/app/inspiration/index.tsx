@@ -2,11 +2,11 @@ import type * as React from 'react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
 import { NEW_CHAT_ROUTE } from '@/app/routes'
 import { triggerHaptic } from '@/lib/haptics'
 import { INSPIRATION_CARDS, INSPIRATION_CATEGORIES, type InspirationCard } from '@/lib/inspiration-templates'
 import { cn } from '@/lib/utils'
-import { setComposerDraft } from '@/store/composer'
 
 import { PageSearchShell } from '../page-search-shell'
 
@@ -31,9 +31,12 @@ export function InspirationView(props: React.ComponentProps<'section'>) {
   const tabs = useMemo(() => [{ id: ALL, label: ALL }, ...INSPIRATION_CATEGORIES.map(c => ({ id: c, label: c }))], [])
 
   const use = (card: InspirationCard) => {
-    setComposerDraft(card.prompt)
     triggerHaptic('selection')
     navigate(NEW_CHAT_ROUTE)
+    // Deferred insert lands after the fresh composer mounts (setComposerDraft
+    // wrote to a dead atom that no composer subscribes to).
+    requestComposerInsert(card.prompt, { mode: 'block', target: 'main' })
+    requestComposerFocus('main')
   }
 
   return (

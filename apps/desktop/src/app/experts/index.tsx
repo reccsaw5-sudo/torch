@@ -3,12 +3,12 @@ import type * as React from 'react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
 import { NEW_CHAT_ROUTE } from '@/app/routes'
 import { Codicon } from '@/components/ui/codicon'
 import { type Expert, EXPERT_CATEGORIES, EXPERTS } from '@/lib/expert-templates'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
-import { setComposerDraft } from '@/store/composer'
 import { $favoriteExpertIds, toggleExpertFavorite } from '@/store/experts'
 
 import { PageSearchShell } from '../page-search-shell'
@@ -133,9 +133,12 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
   const [notice, setNotice] = useState<string | null>(null)
 
   const use = (expert: Expert) => {
-    setComposerDraft(expert.opener)
     triggerHaptic('selection')
     navigate(NEW_CHAT_ROUTE)
+    // Deferred insert lands after the fresh composer mounts (same bus TorchHome
+    // / startWorkSession use). setComposerDraft was a dead atom nothing reads.
+    requestComposerInsert(expert.opener, { mode: 'block', target: 'main' })
+    requestComposerFocus('main')
   }
 
   const plazaExperts = useMemo(
