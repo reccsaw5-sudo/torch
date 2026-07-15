@@ -182,6 +182,27 @@ _DDL = [
         created_at BIGINT NOT NULL
     )
     """,
+    # 专家广场:预设 AI 专家(机器人)目录。expert_id 是稳定 slug;persona 供内核
+    # 「人设常驻系统提示」使用(#1),opener 供前端预填输入框。
+    """
+    CREATE TABLE IF NOT EXISTS experts (
+        id SERIAL PRIMARY KEY,
+        expert_id TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        author TEXT NOT NULL DEFAULT '',
+        emoji TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT '',
+        intro TEXT NOT NULL DEFAULT '',
+        opener TEXT NOT NULL DEFAULT '',
+        persona TEXT NOT NULL DEFAULT '',
+        usage_count INTEGER NOT NULL DEFAULT 0,
+        featured INTEGER NOT NULL DEFAULT 0,
+        is_new INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at BIGINT NOT NULL
+    )
+    """,
     "CREATE TABLE IF NOT EXISTS auth_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS build_config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     """
@@ -227,6 +248,63 @@ _SEED_SKILLS = [
      "# code-review\n\n对提供的代码做结构化审查：可读性、边界情况、安全性与性能建议。", 30),
 ]
 
+# 专家广场种子:与前端 lib/expert-templates.ts 对齐,首启即有一批内置专家。
+# 字段:(expert_id, name, author, emoji, category, intro, opener, usage, featured, is_new)
+# persona 入库时先复用 opener(#1 内核绑定时可在后台细化)。
+_SEED_EXPERTS = [
+    ("stock-analyst", "股票投资专家", "Torch", "📈", "金融投资",
+     "从 K 线到财报，从选股到持仓，一站式投资分析。",
+     "你现在是一位资深股票投资分析师。请从基本面(财报)、技术面(K 线)、消息面综合帮我做投资分析，并给出风险提示。我先说标的:", 24000, 1, 0),
+    ("fund-manager", "基金主理人", "Rink", "💰", "金融投资",
+     "穿透数据，帮你挑出值得长期持有的好基金。",
+     "你现在是一位专业的基金投顾。请根据我的风险偏好和目标，帮我筛选与搭配基金，并说明配置逻辑和风险。先问我的投资目标、期限和可承受回撤:", 8600, 0, 0),
+    ("video-editor", "视频日志化剪辑专家", "Reelzhang", "🎬", "内容创作",
+     "AI 短视频全自动化剪辑专家。",
+     "你现在是一位专业的短视频剪辑与脚本策划。请帮我把素材/主题剪成一条有节奏的短视频:给出分镜脚本、字幕文案和配乐建议。我先说主题和平台:", 19000, 1, 0),
+    ("viral-shorts", "爆款短视频创意家", "E", "🔥", "内容创作",
+     "从关键词到爆款蓝图的视频策划师。",
+     "你现在是爆款短视频操盘手。请围绕我的主题给出 3 个爆款选题、钩子开头、脚本结构和标题。先问我的行业与目标人群:", 6180, 0, 1),
+    ("ecom-director", "电商爆款视频导演", "E", "🛒", "营销增长",
+     "用电影镜头驱动商品购买欲望的导演。",
+     "你现在是电商短视频导演。请为我的商品策划一条种草视频:卖点提炼、镜头脚本、口播文案和转化钩子。先告诉我商品和目标平台:", 738, 0, 0),
+    ("gov-writer", "公文笔杆子", "叹希春", "🖋️", "办公协同",
+     "严谨规范，精准办公。",
+     "你现在是资深公文写作专家，行文严谨规范。请帮我起草公文/材料，注意格式与措辞。我先说文种和需求:", 352, 0, 0),
+    ("social-cover", "社媒封面设计大师", "F", "🎨", "视觉创意",
+     "十九种风格驱动双栏封面的设计师。",
+     "你现在是社媒封面与版式设计师。请根据我的主题给出封面文案、排版风格与配色方案(可多套)。先告诉我平台和主题:", 4200, 0, 0),
+    ("ai-film-director", "AI 现实主义电影导演", "莱莱巴顿", "🎥", "视觉创意",
+     "稳定输出电影级 Prompt。",
+     "你现在是 AI 影像导演，擅长写电影级生成提示词。请把我的创意写成结构化的镜头 Prompt(景别、光线、镜头、氛围)。先说说你想要的画面:", 5100, 0, 1),
+    ("ai-engineer", "AI 工程师", "廖建锐", "🛠️", "技术工程",
+     "从模型到产品落地。",
+     "你现在是一位资深 AI 工程师。请帮我把需求拆成可落地的技术方案:选型、架构、关键实现与坑点。先说说你要做什么:", 894, 1, 0),
+    ("miniprogram-dev", "微信小程序开发", "Torch", "📱", "技术工程",
+     "从 0 到 1 帮你搭出可用的小程序。",
+     "你现在是微信小程序开发专家。请帮我规划并实现一个小程序:页面结构、数据模型、关键代码与上线注意事项。先说说你的想法:", 12000, 0, 0),
+    ("gaokao-advisor", "高考志愿填报", "Torch", "🎓", "办公协同",
+     "分数、位次、兴趣三维匹配，报得稳又不浪费分。",
+     "你现在是高考志愿填报专家。请结合我的分数、位次、意向城市与专业，给出冲稳保梯度方案并说明理由。先告诉我分数、省份和意向:", 33000, 1, 1),
+    ("lazy-trip", "懒人出游规划师", "Torch", "🧳", "生活娱乐",
+     "一句话给你排好行程，懒人友好。",
+     "你现在是贴心的旅行规划师。请给我一份省心的出游方案:行程时间线、交通、吃住与预算。先问我出发城市、天数和偏好:", 9800, 0, 0),
+    ("bazi-master", "生辰命理大师", "Torch", "🔮", "生活娱乐",
+     "轻松解读，图个乐子。",
+     "你现在是一位风趣的命理解读者(仅供娱乐)。请根据我提供的生辰做一个轻松的性格与运势解读。先告诉我出生年月日时:", 15000, 0, 1),
+    ("solo-growth", "一人公司增长顾问", "Torch", "🚀", "一人公司",
+     "一个人也能跑通的产品、获客与变现。",
+     "你现在是「一人公司」增长顾问。请帮我把想法打磨成可独立运营的小生意:定位、MVP、获客渠道和变现。先说说你的方向:", 5400, 0, 0),
+    ("private-domain", "私域营销操盘手", "Torch", "📣", "营销增长",
+     "从引流到成交，搭一套能复用的私域打法。",
+     "你现在是私域营销操盘手。请帮我设计一套私域运营方案:引流钩子、承接话术、社群 SOP 与成交路径。先说说你的产品和现状:", 3100, 0, 0),
+    ("xhs-copy", "小红书文案专家", "Torch", "📕", "内容创作",
+     "标题抓眼、正文带货的种草文案。",
+     "你现在是小红书爆款文案写手。请围绕我的主题写出标题(多个备选)、正文和话题标签，风格要真实种草。先说说要推什么:", 7600, 0, 0),
+    ("resume-coach", "简历优化师", "Torch", "📄", "办公协同",
+     "用结果量化经历，让简历一眼被看到。",
+     "你现在是资深简历优化师与面试官。请帮我把经历改写成量化、有说服力的表达，并指出短板。我把简历/经历发给你:", 4700, 0, 0),
+]
+
 def _init_db() -> None:
     with _db() as conn:
         for stmt in _DDL:
@@ -262,6 +340,15 @@ def _init_db() -> None:
                     "INSERT INTO skills(slug, name, description, category, content,"
                     " sort_order, enabled, created_at) VALUES (%s,%s,%s,%s,%s,%s,1,%s)",
                     (slug, name, desc, cat, content, order, int(time.time())),
+                )
+        if conn.execute("SELECT COUNT(*) AS n FROM experts").fetchone()["n"] == 0:
+            for i, (xid, name, author, emoji, cat, intro, opener, usage, feat, isnew) in enumerate(_SEED_EXPERTS):
+                conn.execute(
+                    "INSERT INTO experts(expert_id, name, author, emoji, category, intro,"
+                    " opener, persona, usage_count, featured, is_new, sort_order, enabled,"
+                    " created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s)",
+                    (xid, name, author, emoji, cat, intro, opener, opener, usage, feat,
+                     isnew, i * 10, int(time.time())),
                 )
 
 
@@ -586,6 +673,110 @@ def admin_delete_suggestion(
     _require_admin(x_admin_token)
     with _db() as conn:
         conn.execute("DELETE FROM suggestions WHERE id = %s", (sid,))
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# Expert plaza (专家广场; public read; admin CRUD)
+# --------------------------------------------------------------------------
+class ExpertUpsert(BaseModel):
+    id: Optional[int] = None
+    expert_id: str
+    name: str
+    author: str = ""
+    emoji: str = ""
+    category: str = ""
+    intro: str = ""
+    opener: str = ""
+    persona: str = ""
+    usage_count: int = 0
+    featured: int = 0
+    is_new: int = 0
+    sort_order: int = 0
+    enabled: int = 1
+
+
+def _expert_public(r) -> dict:
+    return {
+        "id": r["expert_id"],
+        "name": r["name"],
+        "author": r["author"],
+        "emoji": r["emoji"],
+        "category": r["category"],
+        "intro": r["intro"],
+        "opener": r["opener"],
+        "persona": r["persona"],
+        "usage": r["usage_count"],
+        "featured": bool(r["featured"]),
+        "isNew": bool(r["is_new"]),
+    }
+
+
+@app.get("/experts")
+def list_experts() -> dict:
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT expert_id, name, author, emoji, category, intro, opener, persona,"
+            " usage_count, featured, is_new FROM experts"
+            " WHERE enabled = 1 ORDER BY sort_order, id"
+        ).fetchall()
+    return {"data": [_expert_public(r) for r in rows]}
+
+
+@app.get("/admin/experts")
+def admin_list_experts(x_admin_token: Optional[str] = Header(default=None)) -> dict:
+    _require_admin(x_admin_token)
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT id, expert_id, name, author, emoji, category, intro, opener, persona,"
+            " usage_count, featured, is_new, sort_order, enabled FROM experts"
+            " ORDER BY sort_order, id"
+        ).fetchall()
+    return {"data": [dict(r) for r in rows]}
+
+
+@app.post("/admin/experts")
+def admin_upsert_expert(
+    payload: ExpertUpsert, x_admin_token: Optional[str] = Header(default=None)
+) -> dict:
+    _require_admin(x_admin_token)
+    with _db() as conn:
+        if payload.id is None:
+            conn.execute(
+                "INSERT INTO experts(expert_id, name, author, emoji, category, intro,"
+                " opener, persona, usage_count, featured, is_new, sort_order, enabled,"
+                " created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                " ON CONFLICT (expert_id) DO UPDATE SET name=EXCLUDED.name,"
+                " author=EXCLUDED.author, emoji=EXCLUDED.emoji, category=EXCLUDED.category,"
+                " intro=EXCLUDED.intro, opener=EXCLUDED.opener, persona=EXCLUDED.persona,"
+                " usage_count=EXCLUDED.usage_count, featured=EXCLUDED.featured,"
+                " is_new=EXCLUDED.is_new, sort_order=EXCLUDED.sort_order,"
+                " enabled=EXCLUDED.enabled",
+                (payload.expert_id, payload.name, payload.author, payload.emoji,
+                 payload.category, payload.intro, payload.opener, payload.persona,
+                 payload.usage_count, payload.featured, payload.is_new,
+                 payload.sort_order, payload.enabled, int(time.time())),
+            )
+        else:
+            conn.execute(
+                "UPDATE experts SET expert_id=%s, name=%s, author=%s, emoji=%s,"
+                " category=%s, intro=%s, opener=%s, persona=%s, usage_count=%s,"
+                " featured=%s, is_new=%s, sort_order=%s, enabled=%s WHERE id=%s",
+                (payload.expert_id, payload.name, payload.author, payload.emoji,
+                 payload.category, payload.intro, payload.opener, payload.persona,
+                 payload.usage_count, payload.featured, payload.is_new,
+                 payload.sort_order, payload.enabled, payload.id),
+            )
+    return {"ok": True}
+
+
+@app.delete("/admin/experts/{eid}")
+def admin_delete_expert(
+    eid: int, x_admin_token: Optional[str] = Header(default=None)
+) -> dict:
+    _require_admin(x_admin_token)
+    with _db() as conn:
+        conn.execute("DELETE FROM experts WHERE id = %s", (eid,))
     return {"ok": True}
 
 

@@ -1,15 +1,16 @@
 import { useStore } from '@nanostores/react'
 import type * as React from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
 import { NEW_CHAT_ROUTE } from '@/app/routes'
 import { Codicon } from '@/components/ui/codicon'
-import { type Expert, EXPERT_CATEGORIES, EXPERTS } from '@/lib/expert-templates'
+import { type Expert, EXPERT_CATEGORIES } from '@/lib/expert-templates'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
 import { $favoriteExpertIds, toggleExpertFavorite } from '@/store/experts'
+import { $torchExperts, loadTorchExperts } from '@/store/torch-experts'
 
 import { PageSearchShell } from '../page-search-shell'
 
@@ -17,32 +18,22 @@ const ALL = '全部'
 const PLAZA = 'plaza'
 const MINE = 'mine'
 
-const EXPERT_BY_ID = new Map(EXPERTS.map(e => [e.id, e]))
+const BOARD_META = [
+  { id: 'recommended', title: '推荐榜', icon: 'sparkle', tint: 'from-amber-300/25 to-orange-200/5' },
+  { id: 'hot', title: '热门榜', icon: 'flame', tint: 'from-rose-300/25 to-red-200/5' },
+  { id: 'new', title: '新品榜', icon: 'rocket', tint: 'from-emerald-300/25 to-teal-200/5' }
+] as const
 
-// Ranking boards are derived from the seed data so adding an expert just works.
-const BOARDS: { id: string; title: string; icon: string; tint: string; experts: Expert[] }[] = [
-  {
-    id: 'recommended',
-    title: '推荐榜',
-    icon: 'sparkle',
-    tint: 'from-amber-300/25 to-orange-200/5',
-    experts: EXPERTS.filter(e => e.featured).slice(0, 3)
-  },
-  {
-    id: 'hot',
-    title: '热门榜',
-    icon: 'flame',
-    tint: 'from-rose-300/25 to-red-200/5',
-    experts: [...EXPERTS].sort((a, b) => b.usage - a.usage).slice(0, 3)
-  },
-  {
-    id: 'new',
-    title: '新品榜',
-    icon: 'rocket',
-    tint: 'from-emerald-300/25 to-teal-200/5',
-    experts: EXPERTS.filter(e => e.isNew).slice(0, 3)
+// Ranking boards derived from the live catalog so adding an expert just works.
+function buildBoards(experts: Expert[]): { id: string; title: string; icon: string; tint: string; experts: Expert[] }[] {
+  const picks: Record<string, Expert[]> = {
+    recommended: experts.filter(e => e.featured).slice(0, 3),
+    hot: [...experts].sort((a, b) => b.usage - a.usage).slice(0, 3),
+    new: experts.filter(e => e.isNew).slice(0, 3)
   }
-]
+
+  return BOARD_META.map(meta => ({ ...meta, experts: picks[meta.id] ?? [] }))
+}
 
 const RANK_BADGE = ['bg-amber-400/90 text-white', 'bg-slate-300/90 text-slate-700', 'bg-orange-400/80 text-white']
 
@@ -125,12 +116,20 @@ function ExpertCard({
 // with the expert's opener prefilled into the composer (user reviews, then sends).
 export function ExpertsView(props: React.ComponentProps<'section'>) {
   const navigate = useNavigate()
+  const experts = useStore($torchExperts)
   const favoriteIds = useStore($favoriteExpertIds)
   const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds])
   const [tab, setTab] = useState<string>(PLAZA)
   const [category, setCategory] = useState<string>(ALL)
   const [query, setQuery] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    void loadTorchExperts()
+  }, [])
+
+  const byId = useMemo(() => new Map(experts.map(e => [e.id, e])), [experts])
+  const boards = useMemo(() => buildBoards(experts), [experts])
 
   const use = (expert: Expert) => {
     triggerHaptic('selection')
@@ -142,13 +141,13 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
   }
 
   const plazaExperts = useMemo(
-    () => EXPERTS.filter(e => (category === ALL || e.category === category) && matches(e, query)),
-    [category, query]
+    () => experts.filter(e => (category === ALL || e.category === category) && matches(e, query)),
+    [experts, category, query]
   )
 
   const mineExperts = useMemo(
-    () => favoriteIds.map(id => EXPERT_BY_ID.get(id)).filter((e): e is Expert => Boolean(e) && matches(e as Expert, query)),
-    [favoriteIds, query]
+    () => favoriteIds.map(id => byId.get(id)).filter((e): e is Expert => Boolean(e) && matches(e as Expert, query)),
+    [favoriteIds, byId, query]
   )
 
   const showBoards = tab === PLAZA && category === ALL && !query.trim()
@@ -207,7 +206,7 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
         <div className="mx-auto flex max-w-5xl flex-col gap-5">
           {showBoards ? (
             <div className="grid gap-3 lg:grid-cols-3">
-              {BOARDS.map(board => (
+              {boards.map(board => (
                 <div
                   className={cn('rounded-2xl bg-gradient-to-br p-3', board.tint)}
                   key={board.id}

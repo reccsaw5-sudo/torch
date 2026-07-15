@@ -24,6 +24,8 @@ export interface Expert {
   intro: string
   /** Prefilled first message that establishes the persona and starts the task. */
   opener: string
+  /** Full persona system prompt for kernel "persona binding" (#1); server-fed. */
+  persona?: string
   /** Display-only usage count (formatted as 1.9w etc. in the UI). */
   usage: number
   /** Surfaces on the 推荐榜 board. */
