@@ -104,6 +104,7 @@ import {
   ARTIFACTS_ROUTE,
   CLI_ROUTE,
   CRON_ROUTE,
+  INSPIRATION_ROUTE,
   MEMORY_ROUTE,
   MESSAGING_ROUTE,
   SKILLS_ROUTE
@@ -148,6 +149,12 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     label: '',
     icon: props => <Codicon name="robot" {...props} />,
     action: 'new-session'
+  },
+  {
+    id: 'inspiration',
+    label: '灵感广场',
+    icon: props => <Codicon name="lightbulb" {...props} />,
+    route: INSPIRATION_ROUTE
   },
   {
     id: 'agents',
@@ -198,6 +205,9 @@ function navActive(item: SidebarNavItem, currentView: AppView, routeSearch: stri
 
     case 'mcp':
       return currentView === 'skills' && routeSearch.includes('tab=mcp')
+
+    case 'inspiration':
+      return currentView === 'inspiration'
 
     case 'memory':
       return currentView === 'memory'

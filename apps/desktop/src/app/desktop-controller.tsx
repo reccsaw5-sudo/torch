@@ -137,6 +137,7 @@ const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts'))
 const CliView = lazy(async () => ({ default: (await import('./cli')).CliView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
+const InspirationView = lazy(async () => ({ default: (await import('./inspiration')).InspirationView }))
 const MemoryView = lazy(async () => ({ default: (await import('./memory')).MemoryView }))
 const StarmapView = lazy(async () => ({ default: (await import('./starmap')).StarmapView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
@@ -1342,6 +1343,14 @@ export function DesktopController() {
               </Suspense>
             }
             path="skills"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <InspirationView />
+              </Suspense>
+            }
+            path="inspiration"
           />
           <Route
             element={

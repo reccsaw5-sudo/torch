@@ -128,6 +128,7 @@ export type SidebarNavId =
   | 'cli'
   | 'command-center'
   | 'cron'
+  | 'inspiration'
   | 'mcp'
   | 'memory'
   | 'messaging'
