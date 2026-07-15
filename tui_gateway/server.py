@@ -6084,6 +6084,97 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"text": text})
 
 
+def _memory_text_from_content(content) -> str:
+    """Best-effort plain text from a stored message's content (str or parts)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for part in content:
+            if isinstance(part, dict):
+                t = part.get("text")
+                if isinstance(t, str) and t.strip():
+                    out.append(t)
+            elif isinstance(part, str) and part.strip():
+                out.append(part)
+        return " ".join(out)
+    return ""
+
+
+@method("memory.day_digest")
+def _(rid, params: dict) -> dict:
+    """Compact transcript of one calendar day's chats (记忆空间 日记/做梦 #3).
+
+    The client passes the day's [start, end) as epoch seconds (computed in the
+    user's local tz). Read-only: selects sessions started in the window and
+    concatenates a truncated user/assistant transcript for a one-shot synthesis.
+    Never mutates session history — prompt caching is untouched.
+    """
+    try:
+        start = float(params.get("start") or 0)
+        end = float(params.get("end") or 0)
+    except (TypeError, ValueError):
+        return _err(rid, 4033, "memory.day_digest requires numeric start/end")
+    if end <= start:
+        return _err(rid, 4033, "memory.day_digest requires end > start")
+
+    db = _get_db()
+    if db is None:
+        return _ok(rid, {"text": "", "session_count": 0, "titles": []})
+
+    try:
+        rows = db.list_sessions_rich(limit=300, min_message_count=1)
+    except Exception as e:
+        logger.warning("memory.day_digest list_sessions failed: %s", e)
+        return _err(rid, 5033, f"could not list sessions: {e}")
+
+    day_rows = [r for r in rows if start <= float(r.get("started_at") or 0) < end]
+    day_rows.sort(key=lambda r: float(r.get("started_at") or 0))
+
+    MAX_SESSIONS = 12
+    MAX_CHARS_PER_MSG = 800
+    MAX_TOTAL = 12000
+    parts: list[str] = []
+    titles: list[str] = []
+    total = 0
+    used = 0
+    for r in day_rows[:MAX_SESSIONS]:
+        sid = r.get("id")
+        if not sid:
+            continue
+        title = str(r.get("title") or "").strip()
+        try:
+            msgs = db.get_messages(sid)
+        except Exception:
+            continue
+        chunk_lines: list[str] = []
+        for m in msgs:
+            role = m.get("role")
+            if role not in ("user", "assistant"):
+                continue
+            content = _memory_text_from_content(m.get("content")).strip()
+            if not content:
+                continue
+            if len(content) > MAX_CHARS_PER_MSG:
+                content = content[:MAX_CHARS_PER_MSG] + "…"
+            chunk_lines.append(f"{'我' if role == 'user' else '助手'}：{content}")
+        if not chunk_lines:
+            continue
+        chunk = (f"# 对话：{title}" if title else "# 对话") + "\n" + "\n".join(chunk_lines)
+        if total + len(chunk) > MAX_TOTAL:
+            remaining = MAX_TOTAL - total
+            if remaining <= 200:
+                break
+            chunk = chunk[:remaining] + "…"
+        parts.append(chunk)
+        if title:
+            titles.append(title)
+        total += len(chunk)
+        used += 1
+
+    return _ok(rid, {"text": "\n\n".join(parts), "session_count": used, "titles": titles})
+
+
 @method("handoff.request")
 def _(rid, params: dict) -> dict:
     """Queue a handoff of this session to a messaging platform.
