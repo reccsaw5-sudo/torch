@@ -132,6 +132,7 @@ export type SidebarNavId =
   | 'inspiration'
   | 'mcp'
   | 'memory'
+  | 'memory-space'
   | 'messaging'
   | 'new-session'
   | 'settings'

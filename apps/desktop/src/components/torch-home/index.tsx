@@ -1,9 +1,13 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
+import { EXPERTS_ROUTE, INSPIRATION_ROUTE } from '@/app/routes'
 import { BrandMark } from '@/components/brand-mark'
-import { MessageCircle, RefreshCw, Zap } from '@/lib/icons'
+import { Codicon } from '@/components/ui/codicon'
+import { MessageCircle, RefreshCw } from '@/lib/icons'
+import { INSPIRATION_CARDS } from '@/lib/inspiration-templates'
 import { $torchBrand, loadTorchBrand } from '@/store/torch-brand'
 import {
   $torchSuggestions,
@@ -15,12 +19,22 @@ import {
 
 const BATCH = 3
 
-// Branded empty-state home (replaces the stock wordmark intro): brand logo +
-// greeting + server-driven task cards + a skill-marketplace entry.
+// Local quick-start cards, used when the server returns no suggestions so the
+// home always has something inviting to click (mirrors 灵感广场 content).
+const FALLBACK_CARDS: TorchSuggestion[] = INSPIRATION_CARDS.slice(0, 6).map((card, i) => ({
+  id: -(i + 1),
+  title: card.title,
+  subtitle: card.desc,
+  prompt: card.prompt
+}))
+
+// Branded empty-state home: brand logo + greeting + quick-start task cards
+// (server-driven, local fallback) + entries into 专家广场 / 灵感广场 / 技能市场.
 export function TorchHome() {
   const brand = useStore($torchBrand)
   const suggestions = useStore($torchSuggestions)
   const [offset, setOffset] = useState(0)
+  const navigate = useNavigate()
 
   useEffect(() => {
     void loadTorchBrand()
@@ -28,35 +42,46 @@ export function TorchHome() {
     void loadTorchSkills()
   }, [])
 
+  const source = suggestions.length > 0 ? suggestions : FALLBACK_CARDS
+
   const batch = useMemo(() => {
-    if (suggestions.length === 0) {
+    if (source.length === 0) {
       return [] as TorchSuggestion[]
     }
+
     const out: TorchSuggestion[] = []
-    for (let i = 0; i < Math.min(BATCH, suggestions.length); i++) {
-      out.push(suggestions[(offset + i) % suggestions.length])
+
+    for (let i = 0; i < Math.min(BATCH, source.length); i++) {
+      out.push(source[(offset + i) % source.length])
     }
+
     return out
-  }, [suggestions, offset])
+  }, [source, offset])
 
   const pickCard = (s: TorchSuggestion) => {
     requestComposerInsert(s.prompt, { mode: 'block', target: 'main' })
     requestComposerFocus('main')
   }
 
+  const entries = [
+    { label: '专家广场', icon: 'hubot', onClick: () => navigate(EXPERTS_ROUTE) },
+    { label: '灵感广场', icon: 'lightbulb', onClick: () => navigate(INSPIRATION_ROUTE) },
+    { label: '技能市场', icon: 'zap', onClick: () => openTorchMarket() }
+  ]
+
   return (
     <div className="pointer-events-auto flex w-full max-w-3xl flex-col items-center px-6 py-8 text-center">
       <BrandMark className="size-14 rounded-full shadow-md ring-1 ring-border/50" />
-      <h1 className="mt-6 text-[1.7rem] font-semibold tracking-tight text-foreground">你好，准备就绪</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        开始与 {brand.displayName} 对话。提问、获取代码帮助或探索想法。
-      </p>
+      <h1 className="mt-6 text-[1.7rem] font-semibold tracking-tight text-foreground">
+        Hi，我是 {brand.displayName}
+      </h1>
+      <p className="mt-2 text-sm text-muted-foreground">随时随地，帮您高效干活</p>
 
       {batch.length > 0 && (
         <div className="mt-10 w-full">
           <div className="mb-3 flex items-center justify-between px-1">
             <span className="text-xs font-medium text-muted-foreground">选一个任务，快速开始</span>
-            {suggestions.length > BATCH && (
+            {source.length > BATCH && (
               <button
                 className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
                 onClick={() => setOffset(o => o + BATCH)}
@@ -89,14 +114,19 @@ export function TorchHome() {
         </div>
       )}
 
-      <button
-        className="mt-8 flex items-center gap-1.5 rounded-full border border-border/70 bg-card px-4 py-2 text-xs font-medium text-foreground shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-        onClick={() => openTorchMarket()}
-        type="button"
-      >
-        <Zap className="size-3.5" style={{ color: brand.primaryColor }} />
-        浏览技能市场
-      </button>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+        {entries.map(entry => (
+          <button
+            className="flex items-center gap-1.5 rounded-full border border-border/70 bg-card px-4 py-2 text-xs font-medium text-foreground shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            key={entry.label}
+            onClick={entry.onClick}
+            type="button"
+          >
+            <Codicon name={entry.icon} style={{ color: brand.primaryColor }} />
+            {entry.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

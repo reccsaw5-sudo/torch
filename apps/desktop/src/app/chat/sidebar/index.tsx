@@ -107,6 +107,7 @@ import {
   EXPERTS_ROUTE,
   INSPIRATION_ROUTE,
   MEMORY_ROUTE,
+  MEMORY_SPACE_ROUTE,
   MESSAGING_ROUTE,
   SKILLS_ROUTE
 } from '../../routes'
@@ -162,6 +163,12 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     label: '灵感广场',
     icon: props => <Codicon name="lightbulb" {...props} />,
     route: INSPIRATION_ROUTE
+  },
+  {
+    id: 'memory-space',
+    label: '记忆空间',
+    icon: props => <Codicon name="book" {...props} />,
+    route: MEMORY_SPACE_ROUTE
   },
   {
     id: 'agents',
@@ -221,6 +228,9 @@ function navActive(item: SidebarNavItem, currentView: AppView, routeSearch: stri
 
     case 'memory':
       return currentView === 'memory'
+
+    case 'memory-space':
+      return currentView === 'memory-space'
 
     case 'messaging':
       return currentView === 'messaging'

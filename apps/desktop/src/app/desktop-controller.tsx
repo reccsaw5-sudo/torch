@@ -140,6 +140,7 @@ const CronView = lazy(async () => ({ default: (await import('./cron')).CronView 
 const ExpertsView = lazy(async () => ({ default: (await import('./experts')).ExpertsView }))
 const InspirationView = lazy(async () => ({ default: (await import('./inspiration')).InspirationView }))
 const MemoryView = lazy(async () => ({ default: (await import('./memory')).MemoryView }))
+const MemorySpaceView = lazy(async () => ({ default: (await import('./memory-space')).MemorySpaceView }))
 const StarmapView = lazy(async () => ({ default: (await import('./starmap')).StarmapView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
@@ -1360,6 +1361,14 @@ export function DesktopController() {
               </Suspense>
             }
             path="experts"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <MemorySpaceView />
+              </Suspense>
+            }
+            path="memory-space"
           />
           <Route
             element={
