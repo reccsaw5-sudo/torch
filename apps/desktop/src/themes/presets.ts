@@ -21,9 +21,10 @@ const SYSTEM_MONO =
 export const DEFAULT_TYPOGRAPHY: DesktopThemeTypography = { fontSans: SYSTEM_SANS, fontMono: SYSTEM_MONO }
 
 /**
- * Torch — Codex-style clean workspace. Neutral white/gray surfaces, near-black
- * text and primary action, subtle hairline borders; no colored brand tint. The
- * dark palette mirrors it in neutral graphite so toggling mode stays coherent.
+ * Torch — Codex-style clean workspace. Neutral white/gray surfaces + subtle
+ * hairline borders, with a QQ-style blue primary action so buttons and selected
+ * states read blue. The dark palette mirrors it in neutral graphite (same blue
+ * primary) so toggling mode stays coherent.
  */
 export const nousTheme: DesktopTheme = {
   name: 'nous',
@@ -38,7 +39,7 @@ export const nousTheme: DesktopTheme = {
     mutedForeground: '#8E8EA0',
     popover: '#FFFFFF',
     popoverForeground: '#0D0D0D',
-    primary: '#0D0D0D',
+    primary: '#0C82F0',
     primaryForeground: '#FFFFFF',
     secondary: '#F4F4F5',
     secondaryForeground: '#242428',
@@ -65,8 +66,8 @@ export const nousTheme: DesktopTheme = {
     mutedForeground: '#9B9B9B',
     popover: '#2A2A2A',
     popoverForeground: '#ECECEC',
-    primary: '#ECECEC',
-    primaryForeground: '#0D0D0D',
+    primary: '#0C82F0',
+    primaryForeground: '#FFFFFF',
     secondary: '#2E2E2E',
     secondaryForeground: '#D4D4D4',
     accent: '#2E2E2E',

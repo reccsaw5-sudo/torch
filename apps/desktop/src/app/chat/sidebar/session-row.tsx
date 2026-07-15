@@ -114,7 +114,7 @@ export function SidebarSessionRow({
         }
         className={cn(
           'group row-hover relative min-h-[2.875rem]',
-          isSelected && 'bg-(--ui-row-active-background)',
+          isSelected && 'bg-primary/10',
           isWorking && 'text-foreground',
           // Opaque surface while lifted so the dragged row erases what's under
           // it (translucency let the rows below bleed through).

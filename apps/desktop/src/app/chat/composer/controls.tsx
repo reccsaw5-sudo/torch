@@ -23,8 +23,8 @@ export const GHOST_ICON_BTN = cn(
 // neutral and lets the action visually dominate the row.
 export const PRIMARY_ICON_BTN = cn(
   'size-(--composer-control-primary-size,var(--composer-control-size)) shrink-0 rounded-full p-0',
-  'bg-foreground text-background hover:bg-foreground/90',
-  'disabled:bg-foreground/30 disabled:text-background disabled:opacity-100'
+  'bg-primary text-primary-foreground hover:bg-primary/90',
+  'disabled:bg-primary/30 disabled:text-primary-foreground disabled:opacity-100'
 )
 
 interface ConversationProps {

@@ -97,7 +97,6 @@ import {
   sessionPinId,
   setCurrentCwd
 } from '@/store/session'
-import { $torchBrand } from '@/store/torch-brand'
 
 import {
   AGENTS_ROUTE,
@@ -179,7 +178,7 @@ const NAV_BUTTON_BASE =
   'flex h-7 w-full justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out [-webkit-app-region:no-drag] hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none'
 
 const NAV_BUTTON_ACTIVE =
-  'border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!'
+  'border-transparent bg-primary/10 text-primary shadow-none hover:border-transparent! hover:bg-primary/15 hover:text-primary'
 
 // Highlight a nav row from the routed view (+ query for the MCP/技能 split that
 // share the /skills view).
@@ -344,7 +343,6 @@ export function ChatSidebar({
   // Collapsed-but-overlay-mounted → render the full sidebar, not just the nav rail.
   const overlayMounted = useStore($sidebarOverlayMounted)
   const contentVisible = sidebarOpen || overlayMounted
-  const brand = useStore($torchBrand)
   const panesFlipped = useStore($panesFlipped)
   const agentsGrouped = useStore($sidebarAgentsGrouped)
   const pinnedSessionIds = useStore($pinnedSessionIds)
@@ -1160,15 +1158,11 @@ export function ChatSidebar({
         <div
           className={cn(
             'flex shrink-0 items-center gap-2 px-1 pb-2.5 pt-[calc(var(--titlebar-height)+0.5rem)] [-webkit-app-region:no-drag]',
-            !contentVisible && 'justify-center px-0'
+            !contentVisible && 'flex-col justify-center gap-2 px-0'
           )}
         >
           <BrandMark className="size-7 rounded-lg" />
-          {contentVisible && (
-            <span className="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold text-(--ui-text-primary)">
-              {brand.displayName}
-            </span>
-          )}
+          <TorchAccountRail variant={contentVisible ? 'top' : 'collapsed'} />
         </div>
         <SidebarGroup className="shrink-0 p-0 pb-2">
           <SidebarGroupContent>
@@ -1536,14 +1530,9 @@ export function ChatSidebar({
 
         {contentVisible && !showSessionSections && <SidebarBlankState onNewProject={openProjectCreate} />}
 
-        {contentVisible ? (
+        {contentVisible && (
           <div className="shrink-0 space-y-1 px-0.5 pb-1 pt-0.5">
-            <TorchAccountRail />
             <ProfileRail />
-          </div>
-        ) : (
-          <div className="mt-auto grid shrink-0 place-items-center px-0 pb-2 pt-1">
-            <TorchAccountRail collapsed />
           </div>
         )}
       </SidebarContent>

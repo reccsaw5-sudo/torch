@@ -7,10 +7,12 @@ import { $torchLogin, logoutTorch } from '@/store/torch-login'
 
 import { TorchProfileDialog } from './torch-profile-dialog'
 
-// Sidebar footer account block: who's logged in and logout. Renders nothing
-// when logged out (the login gate owns that state). `collapsed` renders just the
-// avatar button for the slim QQ-style icon rail.
-export function TorchAccountRail({ collapsed = false }: { collapsed?: boolean }) {
+// The logged-in Torch account: avatar + name + logout. Renders nothing when
+// logged out (the login gate owns that state). Variants:
+//   - 'top'       QQ-style header chip (avatar + name + logout, borderless)
+//   - 'collapsed' avatar-only button for the slim icon rail
+//   - 'full'      bordered card (avatar + name + email + logout)
+export function TorchAccountRail({ variant = 'full' }: { variant?: 'collapsed' | 'full' | 'top' }) {
   const { session } = useStore($torchLogin)
   const [profileOpen, setProfileOpen] = useState(false)
 
@@ -27,7 +29,7 @@ export function TorchAccountRail({ collapsed = false }: { collapsed?: boolean })
     }
   }
 
-  if (collapsed) {
+  if (variant === 'collapsed') {
     return (
       <>
         <button
@@ -38,6 +40,35 @@ export function TorchAccountRail({ collapsed = false }: { collapsed?: boolean })
         >
           {initial}
         </button>
+        <TorchProfileDialog onOpenChange={setProfileOpen} open={profileOpen} />
+      </>
+    )
+  }
+
+  if (variant === 'top') {
+    return (
+      <>
+        <button
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-0.5 pr-1 text-left transition-colors [-webkit-app-region:no-drag] hover:bg-(--chrome-action-hover)"
+          onClick={() => setProfileOpen(true)}
+          title="查看个人资料"
+          type="button"
+        >
+          <div className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/15 text-[0.75rem] font-semibold text-primary">
+            {initial}
+          </div>
+          <span className="min-w-0 flex-1 truncate text-[0.875rem] font-semibold text-(--ui-text-primary)">{label}</span>
+        </button>
+        <Button
+          aria-label="退出登录"
+          className="[-webkit-app-region:no-drag]"
+          onClick={onLogout}
+          size="icon-xs"
+          title="退出登录"
+          variant="ghost"
+        >
+          <LogOut />
+        </Button>
         <TorchProfileDialog onOpenChange={setProfileOpen} open={profileOpen} />
       </>
     )
