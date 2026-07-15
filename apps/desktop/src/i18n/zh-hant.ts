@@ -1836,7 +1836,7 @@ export const zhHant = defineLocale({
 
   onboarding: {
     headerTitle: '開始設定 Torch Agent',
-    headerDesc: '連線模型提供方即可開始聊天。大多數選項只需一次點擊。',
+    headerDesc: '推理位址已內建,填入你的 API Key 即可開始聊天。',
     preparingInstall: 'Torch 正在完成安裝。首次執行通常不到一分鐘。',
     starting: '正在啟動 Torch…',
     lookingUpProviders: '正在查詢提供方...',

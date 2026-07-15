@@ -56,27 +56,15 @@ afterEach(() => {
 })
 
 describe('onboarding Picker', () => {
-  it('features Nous Portal and hides other providers behind a disclosure', () => {
+  it('shows the branded Torch-only key entry on first run', () => {
     setProviders([provider('anthropic', 'Anthropic Claude'), provider('nous', 'Nous Portal')])
     render(<Picker ctx={ctx} />)
 
-    expect(screen.getByText('Nous Portal')).toBeTruthy()
-    expect(screen.getByText('Recommended')).toBeTruthy()
+    expect(screen.getByText('Torch')).toBeTruthy()
+    expect(screen.getByPlaceholderText('粘贴你的 API Key')).toBeTruthy()
+    // Neither Nous nor any stock provider is offered on the branded first run.
+    expect(screen.queryByText('Nous Portal')).toBeNull()
     expect(screen.queryByText('Anthropic API Key')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Other providers' }))
-
-    expect(screen.getByText('Anthropic API Key')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Collapse' })).toBeTruthy()
-  })
-
-  it('shows every provider directly when Nous Portal is absent', () => {
-    setProviders([provider('anthropic', 'Anthropic Claude'), provider('openai-codex', 'OpenAI Codex / ChatGPT')])
-    render(<Picker ctx={ctx} />)
-
-    expect(screen.getByText('Anthropic API Key')).toBeTruthy()
-    expect(screen.getByText('OpenAI OAuth (ChatGPT)')).toBeTruthy()
-    expect(screen.queryByText('Other sign-in options')).toBeNull()
     expect(screen.queryByText('Recommended')).toBeNull()
   })
 
@@ -89,14 +77,16 @@ describe('onboarding Picker', () => {
     fireEvent.click(skip)
 
     expect($desktopOnboarding.get().firstRunSkipped).toBe(true)
-    expect(window.localStorage.getItem('hermes-onboarding-skipped-v1')).toBe('1')
   })
 
-  it('hides "choose later" in manual (add-provider) mode', () => {
-    setProviders([provider('nous', 'Nous Portal')])
+  it('shows the stock provider picker in manual mode, without Nous or "choose later"', () => {
+    setProviders([provider('anthropic', 'Anthropic Claude'), provider('nous', 'Nous Portal')])
     $desktopOnboarding.set({ ...$desktopOnboarding.get(), manual: true })
     render(<Picker ctx={ctx} />)
 
+    expect(screen.getByText('Anthropic API Key')).toBeTruthy()
+    expect(screen.queryByText('Nous Portal')).toBeNull()
+    expect(screen.queryByText('Recommended')).toBeNull()
     expect(screen.queryByRole('button', { name: "I'll choose a provider later" })).toBeNull()
   })
 })

@@ -2094,7 +2094,7 @@ export const zh: Translations = {
 
   onboarding: {
     headerTitle: '开始设置 Torch Agent',
-    headerDesc: '连接模型提供方即可开始对话。大多数选项只需一次点击。',
+    headerDesc: '推理地址已内置,填入你的 API Key 即可开始对话。',
     preparingInstall: 'Torch 正在完成安装。首次运行通常不到一分钟。',
     starting: '正在启动 Torch…',
     lookingUpProviders: '正在查找提供方...',

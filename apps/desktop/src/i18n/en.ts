@@ -1922,7 +1922,7 @@ export const en: Translations = {
 
   onboarding: {
     headerTitle: "Let's get you setup with Torch Agent",
-    headerDesc: 'Connect a model provider to start chatting. Most options take one click.',
+    headerDesc: 'The inference endpoint is built in. Paste your API key to start chatting.',
     preparingInstall: 'Torch is finishing install. This usually takes under a minute on first run.',
     starting: 'Starting Torch…',
     lookingUpProviders: 'Looking up providers...',

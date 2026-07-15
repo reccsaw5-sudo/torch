@@ -14,6 +14,7 @@ import {
   $desktopOnboarding,
   clearPendingProviderOAuth,
   closeManualOnboarding,
+  completeDesktopOnboarding,
   confirmOnboardingModel,
   DEFAULT_MANUAL_ONBOARDING_REASON,
   DEFAULT_ONBOARDING_REASON,
@@ -25,6 +26,9 @@ import {
   setOnboardingMode,
   startProviderOAuth
 } from '@/store/onboarding'
+import { $torchApiKeys, addTorchKey, removeTorchKey } from '@/store/torch-api-keys'
+import { $torchBrand } from '@/store/torch-brand'
+import { applyTorchModel, loadTorchModels, readSelectedTorchModel } from '@/store/torch-models'
 import type { ModelOptionProvider, OAuthProvider } from '@/types/hermes'
 
 import { DocsLink, FlowPanel, Status } from './flow'
@@ -391,11 +395,125 @@ const persistShowAll = (value: boolean) => {
   return value
 }
 
+// First-run (non-manual) is the branded Torch-only setup: the client is locked
+// to the built-in torchai.ai gateway, so the only thing to configure is the
+// user's own inference key. Manual "add / switch provider" — opened from an
+// already-configured app — keeps the full stock provider picker.
 export function Picker({ ctx }: { ctx: OnboardingContext }) {
+  const { manual } = useStore($desktopOnboarding)
+
+  return manual ? <ProviderPicker ctx={ctx} /> : <TorchOnboarding ctx={ctx} />
+}
+
+// Branded first-run setup: one inference key against the built-in gateway.
+// Reuses the same key store + model wiring as Settings → Torch (addTorchKey /
+// applyTorchModel), so there's a single source of truth for the user's key.
+function TorchOnboarding({ ctx }: { ctx: OnboardingContext }) {
+  const brand = useStore($torchBrand)
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<null | string>(null)
+
+  const submit = async () => {
+    const key = value.trim()
+
+    if (!key || saving) {
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+
+    const before = $torchApiKeys.get().keys.length
+    addTorchKey(key)
+    const added = $torchApiKeys.get().keys.length > before
+
+    try {
+      const models = await loadTorchModels()
+
+      if (models.length === 0) {
+        if (added) {
+          removeTorchKey($torchApiKeys.get().keys.length - 1)
+        }
+
+        setError('无法用该 Key 获取模型,请确认 Key 有效且推理地址可用。')
+        setSaving(false)
+
+        return
+      }
+
+      await applyTorchModel(readSelectedTorchModel() || models[0])
+      completeDesktopOnboarding()
+      ctx.onCompleted?.()
+    } catch {
+      setError('保存失败,请稍后重试。')
+      setSaving(false)
+    }
+  }
+
+  const name = brand.displayName || 'Torch'
+
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-[8px] bg-primary/[0.06] px-3 py-3">
+        <div className="flex items-center gap-2">
+          {brand.iconUrl ? (
+            <img alt="" className="size-5 shrink-0 rounded" src={brand.iconUrl} />
+          ) : (
+            <span className="grid size-5 shrink-0 place-items-center rounded bg-primary text-[0.6rem] font-bold text-primary-foreground">
+              {name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+          <span className="text-[length:var(--conversation-text-font-size)] font-semibold">{name}</span>
+          <span className="inline-flex items-center bg-primary px-2 py-0.5 text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-primary-foreground">
+            推荐
+          </span>
+        </div>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">推理地址已内置,填入你自己的 API Key 即可开始使用。</p>
+      </div>
+
+      <label className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">推理地址(内置,不可修改)</span>
+        <Input className="font-mono" readOnly value={brand.apiBaseUrl || 'https://torchai.ai'} />
+      </label>
+
+      <div className="grid gap-2">
+        <Input
+          autoComplete="off"
+          autoFocus
+          className="font-mono"
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && void submit()}
+          placeholder="粘贴你的 API Key"
+          type="password"
+          value={value}
+        />
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <ChooseLaterLink />
+        <Button disabled={!value.trim() || saving} onClick={() => void submit()}>
+          {saving ? <Loader2 className="animate-spin" /> : <KeyRound />}
+          {saving ? '连接中…' : '开始使用'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ProviderPicker({ ctx }: { ctx: OnboardingContext }) {
   const { t } = useI18n()
   const { localEndpoint, manual, mode, providers } = useStore($desktopOnboarding)
   const [showAll, setShowAll] = useState(readShowAll)
-  const ordered = useMemo(() => (providers ? sortProviders(providers) : []), [providers])
+
+  // Nous Portal is never surfaced in the branded client — filter it out so no
+  // featured hero or list row for it can appear.
+  const ordered = useMemo(
+    () => (providers ? sortProviders(providers).filter(p => p.id !== FEATURED_ID) : []),
+    [providers]
+  )
+
   const hasOauth = ordered.length > 0
   const apiKeyOptions = useApiKeyCatalog()
 

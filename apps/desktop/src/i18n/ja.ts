@@ -1892,7 +1892,7 @@ export const ja = defineLocale({
 
   onboarding: {
     headerTitle: 'Torch Agent のセットアップをしましょう',
-    headerDesc: 'チャットを始めるにはモデルプロバイダーを接続してください。ほとんどのオプションはワンクリックです。',
+    headerDesc: '推論エンドポイントは組み込み済みです。API キーを入力すればチャットを開始できます。',
     preparingInstall: 'Torch はインストールを完了中です。初回実行では通常 1 分以内に完了します。',
     starting: 'Torch を起動中…',
     lookingUpProviders: 'プロバイダーを検索中...',
