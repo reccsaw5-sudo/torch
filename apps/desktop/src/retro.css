@@ -1,0 +1,35 @@
+/*
+ * 怀旧模式 (QQ 2007 / Windows XP) chrome layer. Scoped under html[data-retro] so
+ * it only paints when 怀旧模式 is on; pairs with the qq2007 skin + RetroFrame
+ * (buddy rail + taskbar). Purely cosmetic — no functional layout is rebuilt.
+ */
+
+html[data-retro='true'] {
+  --retro-rail-width: 190px;
+  --retro-taskbar-height: 34px;
+  /* Squarer, classic corners on shadcn controls that read --radius. */
+  --radius: 4px;
+}
+
+/* Reserve room for the fixed buddy rail (right) + taskbar (bottom) so the chat
+   / pane content is never hidden underneath them. <main> holds the pane area. */
+html[data-retro='true'] main {
+  padding-right: var(--retro-rail-width);
+  padding-bottom: var(--retro-taskbar-height);
+}
+
+/* Classic chunky XP scrollbars in the retro blue palette. */
+html[data-retro='true'] *::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+html[data-retro='true'] *::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #eaf3ff, #b9d4ff);
+  border: 1px solid #7fa8de;
+  border-radius: 3px;
+}
+
+html[data-retro='true'] *::-webkit-scrollbar-track {
+  background: #eaf1fb;
+}

@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react'
 import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
 import { FloatingPet } from '@/components/pet/floating-pet'
+import { RetroFrame } from '@/components/retro/retro-frame'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import {
@@ -232,6 +233,10 @@ export function AppShell({
       {/* Petdex floating mascot — in-window, always-on-top, reactive to agent
           activity. Renders nothing unless a pet is installed + enabled. */}
       <FloatingPet />
+
+      {/* 怀旧模式 (QQ 2007 / XP) decorations: buddy rail + taskbar. Renders
+          nothing unless retro mode is on. */}
+      <RetroFrame />
     </SidebarProvider>
   )
 }

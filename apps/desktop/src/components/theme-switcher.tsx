@@ -1,10 +1,14 @@
+import { useStore } from '@nanostores/react'
+
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SegmentedControl } from '@/components/ui/segmented-control'
+import { Switch } from '@/components/ui/switch'
 import { triggerHaptic } from '@/lib/haptics'
 import { Check, Monitor, Moon, Sun } from '@/lib/icons'
 import { cn } from '@/lib/utils'
+import { $retroMode, $retroPrevTheme } from '@/store/retro-mode'
 import { type ThemeMode, useTheme } from '@/themes/context'
 
 const MODE_OPTIONS = [
@@ -19,6 +23,22 @@ const MODE_OPTIONS = [
 // persists per profile. Placed in the sidebar header for one-click access.
 export function ThemeSwitcher({ className }: { className?: string }) {
   const { themeName, mode, availableThemes, setTheme, setMode } = useTheme()
+  const retro = useStore($retroMode)
+
+  // 怀旧模式 pairs the qq2007 skin with the retro chrome (RetroFrame + retro.css).
+  // Entering remembers the current skin; leaving restores it.
+  const toggleRetro = (next: boolean) => {
+    triggerHaptic('crisp')
+
+    if (next) {
+      $retroPrevTheme.set(themeName === 'qq2007' ? 'nous' : themeName)
+      $retroMode.set(true)
+      setTheme('qq2007')
+    } else {
+      $retroMode.set(false)
+      setTheme($retroPrevTheme.get() || 'nous')
+    }
+  }
 
   return (
     <Popover>
@@ -76,6 +96,14 @@ export function ThemeSwitcher({ className }: { className?: string }) {
                 )
               })}
             </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-md border border-(--ui-stroke-tertiary) px-2 py-1.5">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+              <Codicon className="text-sm" name="history" />
+              怀旧模式 · QQ2007
+            </span>
+            <Switch checked={retro} onCheckedChange={toggleRetro} size="xs" />
           </div>
         </div>
       </PopoverContent>

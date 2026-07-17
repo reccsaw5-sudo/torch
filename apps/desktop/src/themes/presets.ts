@@ -271,13 +271,56 @@ export const slateTheme: DesktopTheme = {
   }
 }
 
+/**
+ * QQ 2007 / Windows XP "Luna" blue — the retro skin behind 怀旧模式. The palette
+ * evokes classic XP chrome (glossy blues, light-blue panels, silver hairlines);
+ * the full retro chrome (titlebar band, mascot rail, taskbar) is layered on by
+ * styles/retro.css + RetroFrame when 怀旧模式 is on.
+ */
+export const qq2007Theme: DesktopTheme = {
+  name: 'qq2007',
+  label: 'QQ 2007',
+  description: '怀旧 Windows XP 蓝 · 复古模式',
+  colors: {
+    background: '#FBFDFF',
+    foreground: '#0A1A33',
+    card: '#FFFFFF',
+    cardForeground: '#0A1A33',
+    muted: '#EAF1FB',
+    mutedForeground: '#4B6A93',
+    popover: '#FFFFFF',
+    popoverForeground: '#0A1A33',
+    primary: '#2A6FD6',
+    primaryForeground: '#FFFFFF',
+    secondary: '#DCE9FB',
+    secondaryForeground: '#1B3B66',
+    accent: '#E6F0FD',
+    accentForeground: '#1B3B66',
+    border: '#A9C3E8',
+    input: '#9DB9E0',
+    ring: '#2A6FD6',
+    midground: '#2A6FD6',
+    composerRing: '#7FA8DE',
+    destructive: '#C0392B',
+    destructiveForeground: '#FFFFFF',
+    sidebarBackground: '#D6E6FB',
+    sidebarBorder: '#A9C3E8',
+    userBubble: '#E6F0FD',
+    userBubbleBorder: '#A9C3E8'
+  },
+  typography: {
+    fontSans: `"Tahoma", "Segoe UI", "MS Sans Serif", "微软雅黑", "Microsoft YaHei", sans-serif, ${EMOJI_FALLBACK}`
+  }
+}
+
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
   nous: nousTheme,
   midnight: midnightTheme,
   ember: emberTheme,
   mono: monoTheme,
   cyberpunk: cyberpunkTheme,
-  slate: slateTheme
+  slate: slateTheme,
+  qq2007: qq2007Theme
 }
 
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
