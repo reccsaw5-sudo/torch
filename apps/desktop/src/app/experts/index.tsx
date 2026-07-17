@@ -3,12 +3,12 @@ import type * as React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
 import { NEW_CHAT_ROUTE } from '@/app/routes'
 import { Codicon } from '@/components/ui/codicon'
 import { type Expert, EXPERT_CATEGORIES, expertSystemPrompt } from '@/lib/expert-templates'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
+import { stashSessionDraft } from '@/store/composer'
 import { $favoriteExpertIds, setPendingExpertPersona, toggleExpertFavorite } from '@/store/experts'
 import { $torchExperts, loadTorchExperts } from '@/store/torch-experts'
 
@@ -137,11 +137,12 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
     // as `system_prompt`, so the kernel bakes it into this chat's overlay before
     // the first API call (persistent for the whole conversation, cache-safe).
     setPendingExpertPersona(expertSystemPrompt(expert))
+    // Stash the opener as the new-chat draft (scope __new__). The composer loads
+    // it on mount via takeSessionDraft — reliable across the full-page experts →
+    // chat route swap, unlike the event bus which fires before the composer
+    // subscribes (that raced away → the "blank conversation" the user saw).
+    stashSessionDraft(null, expert.opener, [])
     navigate(NEW_CHAT_ROUTE)
-    // Deferred insert lands after the fresh composer mounts (same bus TorchHome
-    // / startWorkSession use). setComposerDraft was a dead atom nothing reads.
-    requestComposerInsert(expert.opener, { mode: 'block', target: 'main' })
-    requestComposerFocus('main')
   }
 
   const plazaExperts = useMemo(

@@ -2,11 +2,11 @@ import type * as React from 'react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
 import { NEW_CHAT_ROUTE } from '@/app/routes'
 import { triggerHaptic } from '@/lib/haptics'
 import { INSPIRATION_CARDS, INSPIRATION_CATEGORIES, type InspirationCard } from '@/lib/inspiration-templates'
 import { cn } from '@/lib/utils'
+import { stashSessionDraft } from '@/store/composer'
 
 import { PageSearchShell } from '../page-search-shell'
 
@@ -32,11 +32,12 @@ export function InspirationView(props: React.ComponentProps<'section'>) {
 
   const use = (card: InspirationCard) => {
     triggerHaptic('selection')
+    // Stash the prompt as the new-chat draft (scope __new__) so the freshly
+    // mounted composer loads it via takeSessionDraft — reliable across the
+    // full-page → chat route swap (the event bus fired before the composer
+    // subscribed, so the insert was lost = the blank conversation bug).
+    stashSessionDraft(null, card.prompt, [])
     navigate(NEW_CHAT_ROUTE)
-    // Deferred insert lands after the fresh composer mounts (setComposerDraft
-    // wrote to a dead atom that no composer subscribes to).
-    requestComposerInsert(card.prompt, { mode: 'block', target: 'main' })
-    requestComposerFocus('main')
   }
 
   return (
