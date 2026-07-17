@@ -7,6 +7,7 @@ import { useLocation } from 'react-router-dom'
 
 import { PlatformAvatar } from '@/app/messaging/platform-icon'
 import { BrandMark } from '@/components/brand-mark'
+import { ThemeSwitcher } from '@/components/theme-switcher'
 import { TorchAccountRail } from '@/components/torch-account-rail'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -1193,6 +1194,7 @@ export function ChatSidebar({
         >
           <BrandMark className="size-7 rounded-lg" />
           <TorchAccountRail variant={contentVisible ? 'top' : 'collapsed'} />
+          <ThemeSwitcher />
         </div>
         <SidebarGroup className="shrink-0 p-0 pb-2">
           <SidebarGroupContent>
