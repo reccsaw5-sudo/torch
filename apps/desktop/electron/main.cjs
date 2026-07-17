@@ -27,7 +27,7 @@ const { pathToFileURL } = require('node:url')
 const { execFileSync, spawn } = require('node:child_process')
 const { installEmbedReferer } = require('./embed-referer.cjs')
 const { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } = require('./bootstrap-platform.cjs')
-const { runBootstrap } = require('./bootstrap-runner.cjs')
+const { runBootstrap, chinaMirrorEnv } = require('./bootstrap-runner.cjs')
 const {
   buildSessionWindowUrl,
   chatWindowWebPreferences,
@@ -2534,9 +2534,17 @@ async function applyUpdatesPosixInApp() {
   // Put the Hermes-managed Node and the venv on PATH so `hermes desktop`'s
   // npm build can find them on a machine with no system Node. Windows portable
   // Node lives directly under %LOCALAPPDATA%\hermes\node, not node\bin.
+  //
+  // 关键(在线更新失败根因):`hermes update` + `hermes desktop --build-only`
+  // 会跑 uv/pip 同步、`npm ci`、electron-builder 拉 Electron 二进制。首启的
+  // bootstrap-runner 通过 chinaMirrorEnv() 把这些都指到国内镜像(清华 PyPI /
+  // npmmirror / electron 镜像 / Gitee),而这里过去只给了 HERMES_HOME+PATH,
+  // 于是更新时 `npm ci` 走 registry.npmjs.org 在国内被墙/超时 → 桌面重建失败 →
+  // "更新未完成"。这里补上同一套镜像,让在线更新与首启同源可达。
   const env = {
     HERMES_HOME,
-    PATH: pathWithHermesManagedNode(path.join(updateRoot, 'venv', 'bin'))
+    PATH: pathWithHermesManagedNode(path.join(updateRoot, 'venv', 'bin')),
+    ...(typeof chinaMirrorEnv === 'function' ? chinaMirrorEnv() : {})
   }
 
   // `hermes update` reaps stale `hermes serve` backends (a code update

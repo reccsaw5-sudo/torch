@@ -882,6 +882,8 @@ async function runBootstrap(opts) {
 
 module.exports = {
   runBootstrap,
+  // 供在线更新复用:更新/重建走同一套国内镜像(npm/electron/uv/pip/gitee)。
+  chinaMirrorEnv,
   // Exposed for testability
   parseStageResult,
   resolveLocalInstallScript,
