@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
+import { Codicon } from '@/components/ui/codicon'
 import { $retroMode } from '@/store/retro-mode'
 import { isSecondaryWindow } from '@/store/windows'
 
@@ -8,8 +9,58 @@ import { isSecondaryWindow } from '@/store/windows'
 const RAIL_BG = 'linear-gradient(180deg,#EAF3FF 0%,#D3E6FF 55%,#C3DBFF 100%)'
 const RAIL_HEADER_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 100%)'
 const TASKBAR_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 8%,#1A5FC6 55%,#124EA8 100%)'
+const TITLEBAR_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 10%,#1A5FC6 60%,#124EA8 100%)'
+const TOOLBAR_BG = 'linear-gradient(180deg,#FBFDFF 0%,#E4EEFB 45%,#CFE0F7 100%)'
 const START_BG = 'linear-gradient(180deg,#7Bce5c 0%,#4FA83A 45%,#3E8E2E 100%)'
 const MASCOT_BG = 'linear-gradient(160deg,#5AA6FF 0%,#2A6FD6 60%,#1C56B0 100%)'
+
+// Below-the-title XP toolbar row, mirroring the reference (新建任务 / 已安排 /
+// 插件 / 站点 / 拉取请求 / 聊天). Reserved by --retro-toolbar-height (retro.css).
+const TOOLBAR_ITEMS = [
+  { icon: 'add', label: '新建任务' },
+  { icon: 'checklist', label: '已安排' },
+  { icon: 'plug', label: '插件' },
+  { icon: 'globe', label: '站点' },
+  { icon: 'git-pull-request', label: '拉取请求' },
+  { icon: 'comment-discussion', label: '聊天' }
+] as const
+
+function Toolbar() {
+  return (
+    <div
+      className="fixed inset-x-0 z-[44] flex h-[var(--retro-toolbar-height)] items-center gap-0.5 border-b border-[#9DB9E0] px-2 text-[#12325a] [-webkit-app-region:no-drag]"
+      style={{ background: TOOLBAR_BG, top: 'var(--titlebar-height)' }}
+    >
+      {TOOLBAR_ITEMS.map(item => (
+        <button
+          className="flex items-center gap-1.5 rounded border border-transparent px-2 py-1 text-[0.75rem] font-medium hover:border-[#7FA8DE] hover:bg-white/70"
+          key={item.label}
+          type="button"
+        >
+          <Codicon className="text-[0.9375rem] text-[#1E6FE0]" name={item.icon} />
+          {item.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Decorative XP title band across the top. Sits behind the real control
+// clusters (z-70) and the buddy rail (z-55), tinting the titlebar strip blue.
+// Draggable like the native titlebar; the no-drag control clusters win hit-test.
+function TitleBar() {
+  return (
+    <div
+      className="fixed inset-x-0 top-0 z-[45] flex h-[var(--titlebar-height)] items-center justify-center gap-1.5 border-b border-[#0A3A8A] text-white [-webkit-app-region:drag]"
+      style={{ background: TITLEBAR_BG }}
+    >
+      <span className="grid size-4 place-items-center rounded bg-white/25 font-mono text-[0.625rem]">{'>_'}</span>
+      <span className="text-[0.8125rem] font-semibold [text-shadow:0_1px_1px_rgba(0,0,0,0.35)]">
+        Torch · 智能工作台
+      </span>
+    </div>
+  )
+}
 
 function Mascot() {
   return (
@@ -49,7 +100,7 @@ function BuddyRail() {
       style={{
         background: RAIL_BG,
         bottom: 'var(--retro-taskbar-height)',
-        top: 'var(--titlebar-height)'
+        top: 'calc(var(--titlebar-height) + var(--retro-toolbar-height))'
       }}
     >
       <div
@@ -138,6 +189,8 @@ export function RetroFrame() {
 
   return (
     <>
+      <TitleBar />
+      <Toolbar />
       <BuddyRail />
       <Taskbar />
     </>
