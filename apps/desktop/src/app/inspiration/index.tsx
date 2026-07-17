@@ -1,8 +1,10 @@
+import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { NEW_CHAT_ROUTE } from '@/app/routes'
+import { Codicon } from '@/components/ui/codicon'
 import { triggerHaptic } from '@/lib/haptics'
 import {
   INSPIRATION_CARDS,
@@ -12,27 +14,94 @@ import {
 } from '@/lib/inspiration-templates'
 import { cn } from '@/lib/utils'
 import { stashSessionDraft } from '@/store/composer'
+import {
+  $customInspiration,
+  type InspirationDraft,
+  removeCustomInspiration,
+  saveCustomInspiration
+} from '@/store/custom-inspiration'
 import { setPendingSessionPersona } from '@/store/session-persona'
 
 import { PageSearchShell } from '../page-search-shell'
+
+import { InspirationFormDialog } from './inspiration-form'
 
 const ALL = '全部灵感'
 
 // Paired gradient tints for the featured hero banners (cycled by index).
 const HERO_TINTS = ['from-emerald-400/25 to-emerald-500/5', 'from-sky-400/25 to-blue-500/5']
 
+function InspirationTile({
+  card,
+  onUse,
+  onEdit,
+  onDelete
+}: {
+  card: InspirationCard
+  onUse: () => void
+  onEdit?: () => void
+  onDelete?: () => void
+}) {
+  return (
+    <div className="group relative rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/40 transition hover:border-primary/30 hover:bg-primary/[0.04]">
+      <button className="flex w-full flex-col items-start gap-2 p-4 text-left" onClick={onUse} type="button">
+        <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-xl">{card.emoji}</span>
+        <span className="text-[0.875rem] font-semibold text-foreground">{card.title}</span>
+        <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{card.desc}</p>
+      </button>
+      {card.custom ? (
+        <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition group-hover:opacity-100">
+          <button
+            aria-label="编辑灵感"
+            className="grid size-6 place-items-center rounded-full text-sm text-muted-foreground/70 transition hover:bg-background/60 hover:text-foreground"
+            onClick={onEdit}
+            type="button"
+          >
+            <Codicon name="edit" />
+          </button>
+          <button
+            aria-label="删除灵感"
+            className="grid size-6 place-items-center rounded-full text-sm text-muted-foreground/70 transition hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDelete}
+            type="button"
+          >
+            <Codicon name="trash" />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // 灵感广场: a gallery of preset use-cases. Clicking a card drops its prompt into
-// the composer of a fresh chat (the user reviews, then sends).
+// the composer of a fresh chat (the user reviews, then sends). Users can also add
+// their own cards (stored locally) alongside the bundled ones.
 export function InspirationView(props: React.ComponentProps<'section'>) {
   const navigate = useNavigate()
+  const customCards = useStore($customInspiration)
   const [category, setCategory] = useState<string>(ALL)
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<InspirationCard | null>(null)
+
+  const openCreate = () => {
+    setEditing(null)
+    setFormOpen(true)
+  }
+
+  const openEdit = (card: InspirationCard) => {
+    setEditing(card)
+    setFormOpen(true)
+  }
+
+  const onSaveCard = (draft: InspirationDraft, id?: string) => saveCustomInspiration(draft, id)
 
   const featured = useMemo(() => INSPIRATION_CARDS.filter(card => card.featured), [])
 
-  const grid = useMemo(
-    () => (category === ALL ? INSPIRATION_CARDS : INSPIRATION_CARDS.filter(card => card.category === category)),
-    [category]
-  )
+  const grid = useMemo(() => {
+    const all = [...customCards, ...INSPIRATION_CARDS]
+
+    return category === ALL ? all : all.filter(card => card.category === category)
+  }, [category, customCards])
 
   const tabs = useMemo(() => [{ id: ALL, label: ALL }, ...INSPIRATION_CATEGORIES.map(c => ({ id: c, label: c }))], [])
 
@@ -86,21 +155,28 @@ export function InspirationView(props: React.ComponentProps<'section'>) {
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <button
+              className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-(--ui-stroke-tertiary) text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+              onClick={openCreate}
+              type="button"
+            >
+              <Codicon className="text-2xl" name="add" />
+              <span className="text-xs font-medium">新建灵感</span>
+            </button>
             {grid.map(card => (
-              <button
-                className="group flex flex-col items-start gap-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/40 p-4 text-left transition hover:border-primary/30 hover:bg-primary/[0.04]"
+              <InspirationTile
+                card={card}
                 key={card.id}
-                onClick={() => use(card)}
-                type="button"
-              >
-                <span className="grid size-9 place-items-center rounded-lg bg-primary/10 text-xl">{card.emoji}</span>
-                <span className="text-[0.875rem] font-semibold text-foreground">{card.title}</span>
-                <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{card.desc}</p>
-              </button>
+                onDelete={card.custom ? () => removeCustomInspiration(card.id) : undefined}
+                onEdit={card.custom ? () => openEdit(card) : undefined}
+                onUse={() => use(card)}
+              />
             ))}
           </div>
         </div>
       </div>
+
+      <InspirationFormDialog card={editing} onOpenChange={setFormOpen} onSave={onSaveCard} open={formOpen} />
     </PageSearchShell>
   )
 }

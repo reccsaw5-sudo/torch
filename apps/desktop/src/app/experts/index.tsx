@@ -9,11 +9,14 @@ import { type Expert, EXPERT_CATEGORIES, expertSystemPrompt } from '@/lib/expert
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
 import { stashSessionDraft } from '@/store/composer'
+import { $customExperts, type ExpertDraft, removeCustomExpert, saveCustomExpert } from '@/store/custom-experts'
 import { $favoriteExpertIds, toggleExpertFavorite } from '@/store/experts'
 import { setPendingSessionPersona } from '@/store/session-persona'
 import { $torchExperts, loadTorchExperts } from '@/store/torch-experts'
 
 import { PageSearchShell } from '../page-search-shell'
+
+import { ExpertFormDialog } from './expert-form'
 
 const ALL = '全部'
 const PLAZA = 'plaza'
@@ -65,12 +68,16 @@ function ExpertCard({
   expert,
   favorite,
   onUse,
-  onToggleFavorite
+  onToggleFavorite,
+  onEdit,
+  onDelete
 }: {
   expert: Expert
   favorite: boolean
   onUse: () => void
   onToggleFavorite: () => void
+  onEdit?: () => void
+  onDelete?: () => void
 }) {
   return (
     <div className="group relative rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary)/40 transition hover:border-primary/30 hover:bg-primary/[0.04]">
@@ -98,17 +105,40 @@ function ExpertCard({
           </span>
         </div>
       </button>
-      <button
-        aria-label={favorite ? '取消收藏' : '收藏专家'}
-        className={cn(
-          'absolute right-3 top-3 grid size-6 place-items-center rounded-full text-sm transition',
-          favorite ? 'text-amber-400' : 'text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-amber-400'
-        )}
-        onClick={onToggleFavorite}
-        type="button"
-      >
-        <Codicon name={favorite ? 'star-full' : 'star-empty'} />
-      </button>
+      {expert.custom ? (
+        <div className="absolute right-2.5 top-2.5 flex gap-0.5 opacity-0 transition group-hover:opacity-100">
+          <button
+            aria-label="编辑专家"
+            className="grid size-6 place-items-center rounded-full text-sm text-muted-foreground/70 transition hover:bg-background/60 hover:text-foreground"
+            onClick={onEdit}
+            type="button"
+          >
+            <Codicon name="edit" />
+          </button>
+          <button
+            aria-label="删除专家"
+            className="grid size-6 place-items-center rounded-full text-sm text-muted-foreground/70 transition hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDelete}
+            type="button"
+          >
+            <Codicon name="trash" />
+          </button>
+        </div>
+      ) : (
+        <button
+          aria-label={favorite ? '取消收藏' : '收藏专家'}
+          className={cn(
+            'absolute right-3 top-3 grid size-6 place-items-center rounded-full text-sm transition',
+            favorite
+              ? 'text-amber-400'
+              : 'text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-amber-400'
+          )}
+          onClick={onToggleFavorite}
+          type="button"
+        >
+          <Codicon name={favorite ? 'star-full' : 'star-empty'} />
+        </button>
+      )}
     </div>
   )
 }
@@ -118,12 +148,27 @@ function ExpertCard({
 export function ExpertsView(props: React.ComponentProps<'section'>) {
   const navigate = useNavigate()
   const experts = useStore($torchExperts)
+  const customExperts = useStore($customExperts)
   const favoriteIds = useStore($favoriteExpertIds)
   const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds])
   const [tab, setTab] = useState<string>(PLAZA)
   const [category, setCategory] = useState<string>(ALL)
   const [query, setQuery] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<Expert | null>(null)
+
+  const openCreate = () => {
+    setEditing(null)
+    setFormOpen(true)
+  }
+
+  const openEdit = (expert: Expert) => {
+    setEditing(expert)
+    setFormOpen(true)
+  }
+
+  const onSaveExpert = (draft: ExpertDraft, id?: string) => saveCustomExpert(draft, id)
 
   useEffect(() => {
     void loadTorchExperts()
@@ -151,7 +196,9 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
     [experts, category, query]
   )
 
-  const mineExperts = useMemo(
+  const mineCustom = useMemo(() => customExperts.filter(e => matches(e, query)), [customExperts, query])
+
+  const mineFavorites = useMemo(
     () => favoriteIds.map(id => byId.get(id)).filter((e): e is Expert => Boolean(e) && matches(e as Expert, query)),
     [favoriteIds, byId, query]
   )
@@ -205,7 +252,7 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
       searchValue={query}
       tabs={[
         { id: PLAZA, label: '专家广场' },
-        { id: MINE, label: '我的专家', meta: favoriteIds.length || undefined }
+        { id: MINE, label: '我的专家', meta: customExperts.length + favoriteIds.length || undefined }
       ]}
     >
       <div className="relative h-full overflow-y-auto px-4 pb-8 pt-2">
@@ -248,21 +295,40 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
             </div>
           ) : null}
 
-          {tab === MINE && mineExperts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
-              <Codicon className="text-3xl text-muted-foreground/50" name="star-empty" />
-              <div className="text-sm text-muted-foreground">还没有收藏的专家</div>
+          {tab === MINE ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <button
-                className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground transition hover:brightness-110"
-                onClick={() => setTab(PLAZA)}
+                className="flex min-h-[9.5rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-(--ui-stroke-tertiary) text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                onClick={openCreate}
                 type="button"
               >
-                去专家广场逛逛
+                <Codicon className="text-2xl" name="add" />
+                <span className="text-xs font-medium">新建专家</span>
               </button>
+              {mineCustom.map(expert => (
+                <ExpertCard
+                  expert={expert}
+                  favorite={false}
+                  key={expert.id}
+                  onDelete={() => removeCustomExpert(expert.id)}
+                  onEdit={() => openEdit(expert)}
+                  onToggleFavorite={() => {}}
+                  onUse={() => use(expert)}
+                />
+              ))}
+              {mineFavorites.map(expert => (
+                <ExpertCard
+                  expert={expert}
+                  favorite={favoriteSet.has(expert.id)}
+                  key={expert.id}
+                  onToggleFavorite={() => toggleExpertFavorite(expert.id)}
+                  onUse={() => use(expert)}
+                />
+              ))}
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {(tab === PLAZA ? plazaExperts : mineExperts).map(expert => (
+              {plazaExperts.map(expert => (
                 <ExpertCard
                   expert={expert}
                   favorite={favoriteSet.has(expert.id)}
@@ -283,6 +349,8 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
           </div>
         ) : null}
       </div>
+
+      <ExpertFormDialog expert={editing} onOpenChange={setFormOpen} onSave={onSaveExpert} open={formOpen} />
     </PageSearchShell>
   )
 }

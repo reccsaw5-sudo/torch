@@ -15,6 +15,8 @@ export interface InspirationCard {
   prompt: string
   /** Featured cards surface as the large hero banners at the top. */
   featured?: boolean
+  /** True for user-created cards stored locally (editable/deletable). */
+  custom?: boolean
 }
 
 export const INSPIRATION_CATEGORIES: InspirationCategory[] = ['办公提效', '研究学习', '娱乐游戏', '自律生活']

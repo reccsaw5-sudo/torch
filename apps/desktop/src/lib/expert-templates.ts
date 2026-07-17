@@ -33,6 +33,8 @@ export interface Expert {
   featured?: boolean
   /** Surfaces on the 新品榜 board + shows a "新" badge. */
   isNew?: boolean
+  /** True for user-created experts stored locally (editable/deletable in 我的专家). */
+  custom?: boolean
 }
 
 // The persistent, skill-grade system-prompt overlay bound to a chat started from
