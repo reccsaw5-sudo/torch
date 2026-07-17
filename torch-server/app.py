@@ -250,7 +250,8 @@ _SEED_SKILLS = [
 
 # 专家广场种子:与前端 lib/expert-templates.ts 对齐,首启即有一批内置专家。
 # 字段:(expert_id, name, author, emoji, category, intro, opener, usage, featured, is_new)
-# persona 入库时先复用 opener(#1 内核绑定时可在后台细化)。
+# persona 入库时留空:前端 expertSystemPrompt 会按字段合成「技能级」系统提示;
+# 后台可通过 /admin/experts 为某个专家写入 persona 覆盖(#1 人设常驻)。
 _SEED_EXPERTS = [
     ("stock-analyst", "股票投资专家", "Torch", "📈", "金融投资",
      "从 K 线到财报，从选股到持仓，一站式投资分析。",
@@ -347,7 +348,7 @@ def _init_db() -> None:
                     "INSERT INTO experts(expert_id, name, author, emoji, category, intro,"
                     " opener, persona, usage_count, featured, is_new, sort_order, enabled,"
                     " created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s)",
-                    (xid, name, author, emoji, cat, intro, opener, opener, usage, feat,
+                    (xid, name, author, emoji, cat, intro, opener, "", usage, feat,
                      isnew, i * 10, int(time.time())),
                 )
 

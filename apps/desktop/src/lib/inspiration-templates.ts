@@ -1,6 +1,8 @@
 // Inspiration Plaza (灵感广场) content: a gallery of preset use-cases. Clicking a
-// card prefills the composer with `prompt` in a fresh chat (the user reviews and
-// sends). Pure content — edit freely, order doesn't matter.
+// card behaves like a skill: it prefills the composer with `prompt` in a fresh
+// chat AND binds a skill-grade role (inspirationSystemPrompt) to the session so
+// the assistant works with the right expertise + method for the whole
+// conversation. Pure content — edit freely, order doesn't matter.
 
 export type InspirationCategory = '办公提效' | '娱乐游戏' | '研究学习' | '自律生活'
 
@@ -16,6 +18,31 @@ export interface InspirationCard {
 }
 
 export const INSPIRATION_CATEGORIES: InspirationCategory[] = ['办公提效', '研究学习', '娱乐游戏', '自律生活']
+
+// The skill-grade role each inspiration category takes on, so a clicked card
+// runs with the right expertise instead of a bare prompt.
+const INSPIRATION_ROLE: Record<InspirationCategory, string> = {
+  办公提效: '高效办公助手,擅长把杂乱信息结构化、提炼要点、产出可直接使用的成果',
+  研究学习: '学习教练与研究助手,擅长拆解知识、由浅入深地讲解、制定可执行的学习计划',
+  娱乐游戏: '娱乐生活玩伴,擅长游戏攻略、影视与书籍推荐,轻松而实用',
+  自律生活: '生活管家与自律教练,擅长规划日程、拆解目标、督促打卡与生活安排'
+}
+
+// Persistent system-prompt overlay bound to a chat started from an inspiration
+// card (option "B"). Kept lightweight — a category role plus a shared working
+// method — since cards are use-case starters rather than full personas.
+export function inspirationSystemPrompt(card: InspirationCard): string {
+  return [
+    `你是一位${INSPIRATION_ROLE[card.category]}。`,
+    '',
+    '请在本次对话全程遵循以下工作方式:',
+    '1. 先厘清我的真实目标与关键前提,信息不足时主动追问,再动手;',
+    '2. 分步骤推进,给出具体、可执行的建议和成果,而非空泛结论;',
+    '3. 主动指出注意事项与常见误区;不确定的地方如实说明,绝不编造。',
+    '',
+    '回答使用中文,力求简洁、结构清晰、重点突出。'
+  ].join('\n')
+}
 
 export const INSPIRATION_CARDS: InspirationCard[] = [
   {

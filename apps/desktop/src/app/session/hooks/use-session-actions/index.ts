@@ -7,7 +7,6 @@ import { useI18n } from '@/i18n'
 import { preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
 import { setSessionYolo } from '@/lib/yolo-session'
 import { clearQueuedPrompts } from '@/store/composer-queue'
-import { takePendingExpertPersona } from '@/store/experts'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
@@ -42,6 +41,7 @@ import {
   setYoloActive,
   workspaceCwdForNewSession
 } from '@/store/session'
+import { takePendingSessionPersona } from '@/store/session-persona'
 import { broadcastSessionsChanged } from '@/store/session-sync'
 import { isWatchWindow } from '@/store/windows'
 import type { SessionCreateResponse, SessionResumeResponse, UsageStats } from '@/types/hermes'
@@ -174,9 +174,9 @@ export function useSessionActions({
         const uiProvider = $currentProvider.get().trim()
         const uiEffort = $currentReasoningEffort.get().trim()
         const uiFast = $currentFastMode.get()
-        // Expert-plaza persona (#1) bound to this new chat, consumed once so it
-        // can't bleed into the next session. Kernel bakes it in at build time.
-        const persona = takePendingExpertPersona()
+        // Skill-grade persona (专家/灵感) bound to this new chat, consumed once
+        // so it can't bleed into the next session. Kernel bakes it in at build.
+        const persona = takePendingSessionPersona()
 
         const created = await requestGateway<SessionCreateResponse>('session.create', {
           cols: 96,

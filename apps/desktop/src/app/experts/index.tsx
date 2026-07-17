@@ -9,7 +9,8 @@ import { type Expert, EXPERT_CATEGORIES, expertSystemPrompt } from '@/lib/expert
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
 import { stashSessionDraft } from '@/store/composer'
-import { $favoriteExpertIds, setPendingExpertPersona, toggleExpertFavorite } from '@/store/experts'
+import { $favoriteExpertIds, toggleExpertFavorite } from '@/store/experts'
+import { setPendingSessionPersona } from '@/store/session-persona'
 import { $torchExperts, loadTorchExperts } from '@/store/torch-experts'
 
 import { PageSearchShell } from '../page-search-shell'
@@ -136,7 +137,7 @@ export function ExpertsView(props: React.ComponentProps<'section'>) {
     // Bind the persona to the next-created session (#1): session.create ships it
     // as `system_prompt`, so the kernel bakes it into this chat's overlay before
     // the first API call (persistent for the whole conversation, cache-safe).
-    setPendingExpertPersona(expertSystemPrompt(expert))
+    setPendingSessionPersona(expertSystemPrompt(expert))
     // Stash the opener as the new-chat draft (scope __new__). The composer loads
     // it on mount via takeSessionDraft — reliable across the full-page experts →
     // chat route swap, unlike the event bus which fires before the composer

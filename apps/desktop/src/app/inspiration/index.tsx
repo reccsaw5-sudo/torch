@@ -4,9 +4,15 @@ import { useNavigate } from 'react-router-dom'
 
 import { NEW_CHAT_ROUTE } from '@/app/routes'
 import { triggerHaptic } from '@/lib/haptics'
-import { INSPIRATION_CARDS, INSPIRATION_CATEGORIES, type InspirationCard } from '@/lib/inspiration-templates'
+import {
+  INSPIRATION_CARDS,
+  INSPIRATION_CATEGORIES,
+  type InspirationCard,
+  inspirationSystemPrompt
+} from '@/lib/inspiration-templates'
 import { cn } from '@/lib/utils'
 import { stashSessionDraft } from '@/store/composer'
+import { setPendingSessionPersona } from '@/store/session-persona'
 
 import { PageSearchShell } from '../page-search-shell'
 
@@ -32,6 +38,10 @@ export function InspirationView(props: React.ComponentProps<'section'>) {
 
   const use = (card: InspirationCard) => {
     triggerHaptic('selection')
+    // Bind the skill-grade role to the next-created session (option "B"):
+    // session.create ships it as `system_prompt`, so the kernel bakes it into
+    // this chat's overlay before the first API call (persistent, cache-safe).
+    setPendingSessionPersona(inspirationSystemPrompt(card))
     // Stash the prompt as the new-chat draft (scope __new__) so the freshly
     // mounted composer loads it via takeSessionDraft — reliable across the
     // full-page → chat route swap (the event bus fired before the composer

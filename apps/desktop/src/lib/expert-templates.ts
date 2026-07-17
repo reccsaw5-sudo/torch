@@ -1,7 +1,8 @@
 // Expert Plaza (专家广场) content: a marketplace of preset AI experts. Each
-// expert is a persona; clicking one opens a fresh chat with an `opener` prefilled
-// into the composer (the user reviews, then sends). Persona is conveyed by the
-// opener for now — a true persistent system-prompt binding is a backend follow-up.
+// An expert behaves like a skill: clicking one opens a fresh chat, prefills its
+// `opener` into the composer (the user reviews, then sends), AND binds a
+// persistent skill-grade system prompt (expertSystemPrompt) to the session so
+// the assistant keeps the role + professional method for the whole conversation.
 //
 // Pure content — local seed data. `usage` is a display-only seed count.
 
@@ -34,10 +35,12 @@ export interface Expert {
   isNew?: boolean
 }
 
-// The persistent system-prompt overlay bound to a chat started from an expert
-// (#1). Prefer a server/authored `persona`; otherwise synthesize a clean role
-// prompt from name + intro so the assistant stays in-character for the whole
-// conversation (the `opener` remains the user's first message, not the persona).
+// The persistent, skill-grade system-prompt overlay bound to a chat started from
+// an expert (option "B" — each expert behaves like a skill: a role + working
+// method loaded for the whole conversation, not just a one-line prompt). Prefer
+// a server/authored `persona`; otherwise synthesize a structured prompt from the
+// expert's own fields so it stays in-character and follows a professional method
+// across every turn (the `opener` remains the user's first message).
 export function expertSystemPrompt(e: Expert): string {
   const persona = (e.persona ?? '').trim()
 
@@ -45,7 +48,17 @@ export function expertSystemPrompt(e: Expert): string {
     return persona
   }
 
-  return `你现在的身份是「${e.name}」。${e.intro} 请在本次对话中始终保持这一专家身份,提供专业、准确、可执行的帮助;遇到超出该领域的问题时,也从该专家的视角审慎作答。`
+  return [
+    `你是「${e.name}」,${e.category}领域的专家助手。${e.intro.trim()}`,
+    '',
+    '作为该领域的专家,请在本次对话全程遵循以下工作方式:',
+    '1. 先厘清我的真实目标与关键前提,信息不足时主动追问,不要凭空假设;',
+    '2. 用该领域的专业方法分步骤推进,给出具体、可执行的建议和步骤,而非空泛结论;',
+    '3. 主动指出关键风险、注意事项与常见误区;',
+    '4. 涉及专业判断时说明依据与思路;不确定的地方如实说明,绝不编造事实或数据。',
+    '',
+    '始终保持这一专家身份;即使问题超出该领域,也从该专家的视角审慎作答。回答使用中文,力求简洁、结构清晰、重点突出。'
+  ].join('\n')
 }
 
 export const EXPERT_CATEGORIES: ExpertCategory[] = [
