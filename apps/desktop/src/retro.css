@@ -8,6 +8,10 @@
 html[data-retro='true'] {
   --retro-taskbar-height: 34px;
   --retro-toolbar-height: 38px;
+  /* Room reserved at each end of the native status bar for the fixed Start
+     button (left) and clock/tray (right) that RetroFrame overlays. */
+  --retro-start-width: 88px;
+  --retro-clock-width: 96px;
   /* Squarer, classic corners on shadcn controls that read --radius. */
   --radius: 4px;
   /* Recolor the derived chrome tokens so hovers / panels read XP light-blue. */
@@ -18,13 +22,36 @@ html[data-retro='true'] {
   --chrome-action-hover: #cfe2fb;
 }
 
-/* Reserve room for the fixed title band + toolbar (top) and taskbar (bottom) so
-   the chat / pane content is never hidden underneath them. <main> holds the pane
-   area; the project area on the right is the app's own right-sidebar Pane, which
-   reserves its own width — no extra right padding here. */
+/* Reserve room for the fixed title band + toolbar (top). The bottom taskbar is
+   the app's own status bar (styled below), which lives in <main>'s flow and
+   takes real layout space, so no bottom padding is needed. The right-side
+   project area is the app's own right-sidebar Pane, which reserves its own
+   width — no extra right padding here either. */
 html[data-retro='true'] main {
   padding-top: calc(var(--titlebar-height) + var(--retro-toolbar-height));
-  padding-bottom: var(--retro-taskbar-height);
+}
+
+/* ── Fuse the native status bar into the XP taskbar ──────────────────────────
+   The app's own <footer data-slot="statusbar"> (gateway / agent / scheduler on
+   the left, session token count + version on the right) IS the taskbar in retro
+   mode: paint it Luna-blue and reserve room at both ends for the fixed Start
+   button + clock/tray that RetroFrame overlays. Redefining the chrome text
+   tokens here cascades white text onto the real status items without patching
+   the app's own component styles. */
+html[data-retro='true'] [data-slot='statusbar'] {
+  height: var(--retro-taskbar-height);
+  min-height: var(--retro-taskbar-height);
+  align-items: center;
+  padding-left: var(--retro-start-width);
+  padding-right: var(--retro-clock-width);
+  border-top: 1px solid #0a3a8a;
+  background: linear-gradient(180deg, #3a93ff 0%, #1e6fe0 8%, #1a5fc6 55%, #124ea8 100%);
+  color: #fff;
+  --ui-text-tertiary: #eaf2ff;
+  --ui-text-quaternary: #d3e4ff;
+  --foreground: #ffffff;
+  --muted-foreground: #cfe0ff;
+  --chrome-action-hover: rgba(255, 255, 255, 0.2);
 }
 
 /* The sidebar reserves the native titlebar height at its top; in retro mode the

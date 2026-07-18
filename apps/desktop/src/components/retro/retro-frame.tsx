@@ -9,7 +9,6 @@ import { isSecondaryWindow } from '@/store/windows'
 import { AGENTS_ROUTE, CRON_ROUTE, EXPERTS_ROUTE, MESSAGING_ROUTE, NEW_CHAT_ROUTE, SKILLS_ROUTE } from '../../app/routes'
 
 // ── XP "Luna" gradients (inline so they don't depend on theme tokens) ──────────
-const TASKBAR_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 8%,#1A5FC6 55%,#124EA8 100%)'
 const TITLEBAR_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 10%,#1A5FC6 60%,#124EA8 100%)'
 const TOOLBAR_BG = 'linear-gradient(180deg,#FBFDFF 0%,#E4EEFB 45%,#CFE0F7 100%)'
 const START_BG = 'linear-gradient(180deg,#7Bce5c 0%,#4FA83A 45%,#3E8E2E 100%)'
@@ -65,8 +64,11 @@ function Toolbar() {
   )
 }
 
-// XP-style taskbar pinned to the bottom edge: start button, active task, tray +
-// live clock. Reserves its own height via --retro-taskbar-height (retro.css).
+// XP taskbar ends. The bar itself is the app's own status bar (retro.css paints
+// it Luna-blue and pads both ends); RetroFrame only overlays the Start button
+// (left) and the tray + live clock (right) onto those reserved gaps, so the
+// gateway / agent / scheduler / session / version status items sit in between —
+// one fused bar instead of a status strip stacked above a separate taskbar.
 function Taskbar() {
   const [now, setNow] = useState(() => new Date())
 
@@ -79,12 +81,9 @@ function Taskbar() {
   const time = now.toLocaleTimeString('zh-CN', { hour: '2-digit', hour12: false, minute: '2-digit' })
 
   return (
-    <footer
-      className="fixed inset-x-0 bottom-0 z-[60] flex h-[var(--retro-taskbar-height)] items-stretch gap-1 pr-1 text-white [-webkit-app-region:no-drag]"
-      style={{ background: TASKBAR_BG }}
-    >
+    <>
       <button
-        className="flex items-center gap-1.5 rounded-r-xl pl-2.5 pr-4 text-[0.8125rem] font-bold italic text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] [text-shadow:0_1px_1px_rgba(0,0,0,0.35)]"
+        className="fixed bottom-0 left-0 z-[60] flex h-[var(--retro-taskbar-height)] items-center gap-1.5 rounded-r-xl pl-2.5 pr-4 text-[0.8125rem] font-bold italic text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] [text-shadow:0_1px_1px_rgba(0,0,0,0.35)] [-webkit-app-region:no-drag]"
         style={{ background: START_BG }}
         type="button"
       >
@@ -94,27 +93,21 @@ function Taskbar() {
         Torch
       </button>
 
-      <div className="flex flex-1 items-center overflow-hidden py-1">
-        <div className="flex h-full max-w-56 items-center gap-1.5 rounded border border-white/25 bg-white/15 px-2 text-[0.75rem] shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]">
-          <span className="grid size-3.5 place-items-center rounded-sm bg-white/25 font-mono text-[0.5rem]">{'>_'}</span>
-          <span className="truncate">Torch 工作台</span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 rounded border border-white/25 bg-[#1656B8] px-2.5 text-[0.75rem] shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]">
+      <div className="fixed bottom-0 right-0 z-[60] flex h-[var(--retro-taskbar-height)] items-center gap-2 border-l border-white/25 bg-[#1656B8] px-2.5 text-[0.75rem] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)] [-webkit-app-region:no-drag]">
         <span aria-hidden className="text-[0.75rem]">🔊</span>
         <span aria-hidden className="text-[0.75rem]">📶</span>
         <span className="tabular-nums [text-shadow:0_1px_1px_rgba(0,0,0,0.3)]">{time}</span>
       </div>
-    </footer>
+    </>
   )
 }
 
 // Retro shell decorations. Renders only in 怀旧模式 and never in compact
-// secondary windows (pop-outs). The title/toolbar/taskbar footprint is reserved
-// by retro.css padding on <main>, so they don't cover chat content. The project
-// area on the right is the app's own right-sidebar (未打开项目 / 文件树), not a
-// bespoke rail — toggle it from the titlebar's panel button.
+// secondary windows (pop-outs). The title band + toolbar are fixed at the top
+// (space reserved via retro.css padding on <main>); the bottom taskbar is the
+// app's own status bar restyled by retro.css, with the Start button + clock
+// overlaid here. The right-side project area is the app's own right-sidebar
+// (未打开项目 / 文件树) — toggle it from the titlebar's panel button.
 export function RetroFrame() {
   const retro = useStore($retroMode)
 
