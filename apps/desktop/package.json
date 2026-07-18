@@ -2,7 +2,7 @@
   "name": "torch",
   "productName": "Torch",
   "private": true,
-  "version": "1.1.15",
+  "version": "1.1.16",
   "description": "Torch desktop client.",
   "author": "Torch <support@torchai.ai>",
   "homepage": "https://claw.torchai.ai",

@@ -1,26 +1,14 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { Codicon } from '@/components/ui/codicon'
-import { $projects, enterProject } from '@/store/projects'
 import { $retroMode } from '@/store/retro-mode'
-import { $sessions } from '@/store/session'
 import { isSecondaryWindow } from '@/store/windows'
 
-import {
-  AGENTS_ROUTE,
-  CRON_ROUTE,
-  EXPERTS_ROUTE,
-  MESSAGING_ROUTE,
-  NEW_CHAT_ROUTE,
-  sessionRoute,
-  SKILLS_ROUTE
-} from '../../app/routes'
+import { AGENTS_ROUTE, CRON_ROUTE, EXPERTS_ROUTE, MESSAGING_ROUTE, NEW_CHAT_ROUTE, SKILLS_ROUTE } from '../../app/routes'
 
 // ── XP "Luna" gradients (inline so they don't depend on theme tokens) ──────────
-const RAIL_BG = 'linear-gradient(180deg,#EAF3FF 0%,#D3E6FF 55%,#C3DBFF 100%)'
-const RAIL_HEADER_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 100%)'
 const TASKBAR_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 8%,#1A5FC6 55%,#124EA8 100%)'
 const TITLEBAR_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 10%,#1A5FC6 60%,#124EA8 100%)'
 const TOOLBAR_BG = 'linear-gradient(180deg,#FBFDFF 0%,#E4EEFB 45%,#CFE0F7 100%)'
@@ -77,92 +65,6 @@ function Toolbar() {
   )
 }
 
-function TreeRow({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
-  return (
-    <button
-      className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[0.75rem] text-[#123] hover:bg-white/70"
-      onClick={onClick}
-      title={label}
-      type="button"
-    >
-      <Codicon className="shrink-0 text-[0.875rem] text-[#1E6FE0]" name={icon} />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-    </button>
-  )
-}
-
-function GroupLabel({ text }: { text: string }) {
-  return <div className="mb-0.5 mt-2 px-1 text-[0.6875rem] font-semibold text-[#1B3B66]">{text}</div>
-}
-
-// The right rail is a real 项目区: live projects + recent sessions, styled as an
-// XP tree. Clicking a project scopes new work to it; clicking a session resumes
-// it (same as the left sidebar's onResumeSession → navigate(sessionRoute)).
-function ProjectsRail() {
-  const navigate = useNavigate()
-  const projects = useStore($projects)
-  const sessions = useStore($sessions)
-
-  const activeProjects = useMemo(() => projects.filter(p => !p.archived), [projects])
-
-  const recentSessions = useMemo(
-    () => [...sessions].sort((a, b) => (b.started_at || 0) - (a.started_at || 0)).slice(0, 16),
-    [sessions]
-  )
-
-  return (
-    <aside
-      className="fixed right-0 z-[55] flex w-[var(--retro-rail-width)] flex-col overflow-hidden border-l border-[#7FA8DE] text-[#123]"
-      style={{
-        background: RAIL_BG,
-        bottom: 'var(--retro-taskbar-height)',
-        top: 'calc(var(--titlebar-height) + var(--retro-toolbar-height))'
-      }}
-    >
-      <div
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.3)]"
-        style={{ background: RAIL_HEADER_BG }}
-      >
-        <Codicon className="text-[0.9375rem]" name="folder-library" />
-        项目区
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-        <GroupLabel text={`项目 (${activeProjects.length})`} />
-        {activeProjects.length === 0 ? (
-          <div className="px-1.5 py-1 text-[0.6875rem] text-[#5B7391]">暂无项目</div>
-        ) : (
-          activeProjects.map(project => (
-            <TreeRow
-              icon="folder"
-              key={project.id}
-              label={project.name}
-              onClick={() => {
-                enterProject(project.id)
-                navigate(NEW_CHAT_ROUTE)
-              }}
-            />
-          ))
-        )}
-
-        <GroupLabel text="最近会话" />
-        {recentSessions.length === 0 ? (
-          <div className="px-1.5 py-1 text-[0.6875rem] text-[#5B7391]">暂无会话</div>
-        ) : (
-          recentSessions.map(session => (
-            <TreeRow
-              icon="comment"
-              key={session.id}
-              label={session.title?.trim() || session.preview?.trim() || '未命名会话'}
-              onClick={() => navigate(sessionRoute(session.id))}
-            />
-          ))
-        )}
-      </div>
-    </aside>
-  )
-}
-
 // XP-style taskbar pinned to the bottom edge: start button, active task, tray +
 // live clock. Reserves its own height via --retro-taskbar-height (retro.css).
 function Taskbar() {
@@ -209,8 +111,10 @@ function Taskbar() {
 }
 
 // Retro shell decorations. Renders only in 怀旧模式 and never in compact
-// secondary windows (pop-outs). The title/toolbar/rail/taskbar footprint is
-// reserved by retro.css padding on <main>, so they don't cover chat content.
+// secondary windows (pop-outs). The title/toolbar/taskbar footprint is reserved
+// by retro.css padding on <main>, so they don't cover chat content. The project
+// area on the right is the app's own right-sidebar (未打开项目 / 文件树), not a
+// bespoke rail — toggle it from the titlebar's panel button.
 export function RetroFrame() {
   const retro = useStore($retroMode)
 
@@ -222,7 +126,6 @@ export function RetroFrame() {
     <>
       <TitleBar />
       <Toolbar />
-      <ProjectsRail />
       <Taskbar />
     </>
   )

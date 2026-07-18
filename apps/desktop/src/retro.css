@@ -1,11 +1,11 @@
 /*
  * 怀旧模式 (QQ 2007 / Windows XP) chrome layer. Scoped under html[data-retro] so
  * it only paints when 怀旧模式 is on; pairs with the qq2007 skin + RetroFrame
- * (buddy rail + taskbar). Purely cosmetic — no functional layout is rebuilt.
+ * (title band + toolbar + taskbar). Purely cosmetic — no functional layout is
+ * rebuilt; the right-side project area is the app's own right-sidebar Pane.
  */
 
 html[data-retro='true'] {
-  --retro-rail-width: 190px;
   --retro-taskbar-height: 34px;
   --retro-toolbar-height: 38px;
   /* Squarer, classic corners on shadcn controls that read --radius. */
@@ -18,12 +18,12 @@ html[data-retro='true'] {
   --chrome-action-hover: #cfe2fb;
 }
 
-/* Reserve room for the fixed title band + toolbar (top), buddy rail (right) +
-   taskbar (bottom) so the chat / pane content is never hidden underneath them.
-   <main> holds the pane area. */
+/* Reserve room for the fixed title band + toolbar (top) and taskbar (bottom) so
+   the chat / pane content is never hidden underneath them. <main> holds the pane
+   area; the project area on the right is the app's own right-sidebar Pane, which
+   reserves its own width — no extra right padding here. */
 html[data-retro='true'] main {
   padding-top: calc(var(--titlebar-height) + var(--retro-toolbar-height));
-  padding-right: var(--retro-rail-width);
   padding-bottom: var(--retro-taskbar-height);
 }
 
