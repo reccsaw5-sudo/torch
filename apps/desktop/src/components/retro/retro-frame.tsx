@@ -6,7 +6,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { $retroMode } from '@/store/retro-mode'
 import { isSecondaryWindow } from '@/store/windows'
 
-import { AGENTS_ROUTE, CRON_ROUTE, EXPERTS_ROUTE, MESSAGING_ROUTE, NEW_CHAT_ROUTE, SKILLS_ROUTE } from '../../app/routes'
+import { AGENTS_ROUTE, CRON_ROUTE, MESSAGING_ROUTE, NEW_CHAT_ROUTE, SKILLS_ROUTE } from '../../app/routes'
 
 // ── XP "Luna" gradients (inline so they don't depend on theme tokens) ──────────
 const TITLEBAR_BG = 'linear-gradient(180deg,#3A93FF 0%,#1E6FE0 10%,#1A5FC6 60%,#124EA8 100%)'
@@ -36,8 +36,7 @@ const TOOLBAR_ITEMS: { icon: string; label: string; title: string; to: string }[
   { icon: 'checklist', label: '已安排', title: '定时任务', to: CRON_ROUTE },
   { icon: 'plug', label: '插件', title: 'MCP', to: `${SKILLS_ROUTE}?tab=mcp` },
   { icon: 'comment-discussion', label: '消息', title: '消息渠道', to: MESSAGING_ROUTE },
-  { icon: 'organization', label: '智能体', title: '智能体', to: AGENTS_ROUTE },
-  { icon: 'hubot', label: '专家', title: '专家广场', to: EXPERTS_ROUTE }
+  { icon: 'organization', label: '智能体', title: '智能体', to: AGENTS_ROUTE }
 ]
 
 function Toolbar() {

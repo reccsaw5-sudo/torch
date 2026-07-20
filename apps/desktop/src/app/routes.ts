@@ -11,8 +11,6 @@ export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
 export const STARMAP_ROUTE = '/starmap'
-export const INSPIRATION_ROUTE = '/inspiration'
-export const EXPERTS_ROUTE = '/experts'
 export const MEMORY_SPACE_ROUTE = '/memory-space'
 
 export type AppView =
@@ -22,8 +20,6 @@ export type AppView =
   | 'cli'
   | 'command-center'
   | 'cron'
-  | 'experts'
-  | 'inspiration'
   | 'memory'
   | 'memory-space'
   | 'messaging'
@@ -38,8 +34,6 @@ export type AppRouteId =
   | 'cli'
   | 'command-center'
   | 'cron'
-  | 'experts'
-  | 'inspiration'
   | 'memory'
   | 'memory-space'
   | 'messaging'
@@ -68,8 +62,6 @@ export const APP_ROUTES = [
   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
   { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
   { id: 'starmap', path: STARMAP_ROUTE, view: 'starmap' },
-  { id: 'inspiration', path: INSPIRATION_ROUTE, view: 'inspiration' },
-  { id: 'experts', path: EXPERTS_ROUTE, view: 'experts' },
   { id: 'memory-space', path: MEMORY_SPACE_ROUTE, view: 'memory-space' }
 ] as const satisfies readonly AppRoute[]
 

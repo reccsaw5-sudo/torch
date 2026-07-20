@@ -1,9 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer/focus'
-import { EXPERTS_ROUTE, INSPIRATION_ROUTE } from '@/app/routes'
 import { BrandMark } from '@/components/brand-mark'
 import { Codicon } from '@/components/ui/codicon'
 import { MessageCircle, RefreshCw } from '@/lib/icons'
@@ -20,7 +18,7 @@ import {
 const BATCH = 3
 
 // Local quick-start cards, used when the server returns no suggestions so the
-// home always has something inviting to click (mirrors 灵感广场 content).
+// home always has something inviting to click.
 const FALLBACK_CARDS: TorchSuggestion[] = INSPIRATION_CARDS.slice(0, 6).map((card, i) => ({
   id: -(i + 1),
   title: card.title,
@@ -29,12 +27,11 @@ const FALLBACK_CARDS: TorchSuggestion[] = INSPIRATION_CARDS.slice(0, 6).map((car
 }))
 
 // Branded empty-state home: brand logo + greeting + quick-start task cards
-// (server-driven, local fallback) + entries into 专家广场 / 灵感广场 / 技能市场.
+// (server-driven, local fallback) + an entry into 技能市场.
 export function TorchHome() {
   const brand = useStore($torchBrand)
   const suggestions = useStore($torchSuggestions)
   const [offset, setOffset] = useState(0)
-  const navigate = useNavigate()
 
   useEffect(() => {
     void loadTorchBrand()
@@ -63,11 +60,7 @@ export function TorchHome() {
     requestComposerFocus('main')
   }
 
-  const entries = [
-    { label: '专家广场', icon: 'hubot', onClick: () => navigate(EXPERTS_ROUTE) },
-    { label: '灵感广场', icon: 'lightbulb', onClick: () => navigate(INSPIRATION_ROUTE) },
-    { label: '技能市场', icon: 'zap', onClick: () => openTorchMarket() }
-  ]
+  const entries = [{ label: '技能市场', icon: 'zap', onClick: () => openTorchMarket() }]
 
   return (
     <div className="pointer-events-auto flex w-full max-w-3xl flex-col items-center px-6 py-8 text-center">

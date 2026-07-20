@@ -137,8 +137,6 @@ const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts'))
 const CliView = lazy(async () => ({ default: (await import('./cli')).CliView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
-const ExpertsView = lazy(async () => ({ default: (await import('./experts')).ExpertsView }))
-const InspirationView = lazy(async () => ({ default: (await import('./inspiration')).InspirationView }))
 const MemoryView = lazy(async () => ({ default: (await import('./memory')).MemoryView }))
 const MemorySpaceView = lazy(async () => ({ default: (await import('./memory-space')).MemorySpaceView }))
 const StarmapView = lazy(async () => ({ default: (await import('./starmap')).StarmapView }))
@@ -1345,22 +1343,6 @@ export function DesktopController() {
               </Suspense>
             }
             path="skills"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <InspirationView />
-              </Suspense>
-            }
-            path="inspiration"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <ExpertsView />
-              </Suspense>
-            }
-            path="experts"
           />
           <Route
             element={
